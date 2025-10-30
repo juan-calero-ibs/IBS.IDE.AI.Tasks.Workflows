@@ -1,0 +1,233 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // --------------------- TOMCAT ---------------------
+        {
+            "label": "[TOMCAT] 🚀 Start Tomcat",
+            "type": "shell",
+            "command": "nohup /opt/abvprp/apache-tomcat-8.0.35/bin/catalina.sh start >/opt/abvprp/apache-tomcat-8.0.35/logs/vscode-start.log 2>&1 &",
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always",
+                "echo": false, // 👈 hides the actual command line
+                "close": true,
+                "focus": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 🛑 Stop Tomcat",
+            "type": "shell",
+            "command": "/opt/abvprp/apache-tomcat-8.0.35/bin/catalina.sh stop",
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always",
+                "echo": false, // 👈 hides the actual command line
+                "close": true,
+                "focus": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 🛑 Force Stop Tomcat (Kill)",
+            "type": "shell",
+            "command": "pkill -f '/opt/abvprp/apache-tomcat-8.0.35/bin/tomcat-juli.jar' || true; sleep 6; pkill -9 -f '/opt/abvprp/apache-tomcat-8.0.35/bin/tomcat-juli.jar' || true",
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always",
+                "echo": false, // 👈 hides the actual command line
+                "close": true,
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 📡 Check Tomcat Port 8080",
+            "type": "shell",
+            "command": "lsof -i :8080 && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Tomcat is listening on port 8080\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 No listener found on port 8080\"",
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always",
+                "echo": false, // 👈 hides the actual command line
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 🪵 View Tomcat Logs",
+            "type": "shell",
+            "command": "tail -f catalina.out",
+            "options": {
+                "cwd": "/opt/abvprp/apache-tomcat-8.0.35/logs"
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 🧱 Build aboveproperty WAR",
+            "type": "shell",
+            // "command": "./buildIntegratedWAR.sh -branch ${input:branch}| && echo \"✅ SUCCESS - Copy WAR to Tomcat\" || echo \"🛑 Build failed\"",
+            "command": "./buildIntegratedWAR.sh -branch ${input:branch} && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ SUCCESS ⚠️ Remember to copy WAR to Tomcat\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 fail\" ",
+            "options": {
+                "cwd": "../aboveproperty/aboveproperty.war"
+            },
+            "presentation": {
+                "echo": false, // 👈 hides the actual command line
+                "panel": "new", // 🆕 this makes each run use a fresh terminal
+                "clear": true,
+                "focus": true 
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "[TOMCAT] 🚚 Copy aboveproperty WAR ➡️ Tomcat webapps",
+            "type": "shell",
+            "command": "mv ROOT.war ROOT.war_$(date +\"%Y%m%d_%H%M%S\").BAK && cp ~/src/github.com/aboveproperty/aboveproperty.war/target/aboveproperty-war-develop.war ROOT.war && ls -alrt",
+            "options": {
+                "cwd": "/opt/abvprp/apache-tomcat/webapps/"
+            },
+            "presentation": {
+                "echo": false, // 👈 hides the actual command line
+                "panel": "new", // 🆕 this makes each run use a fresh terminal
+            },
+            "problemMatcher": []
+        },
+        // --------------------- SPLUNK ---------------------
+        {
+            "label": "🟩 ▶ Start SPLUNK",
+            "type": "shell",
+            "command": "/Applications/Splunk/bin/splunk start && echo \"✅ Splunk started\" || echo \"⚠️ Failed to start Splunk\"",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "echo": false,
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 ⛔ Stop SPLUNK",
+            "type": "shell",
+            "command": "/Applications/Splunk/bin/splunk stop && echo \"✅ Splunk stopped\" || echo \"⚠️ Failed to stop Splunk\"",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "echo": false,
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩🗑🧹 delete SPLUNK logs🪵",
+            "type": "shell",
+            "command": "rm -rf ~/Documents/splunk/bablefish/* && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Deleted SPLUNK logs in bablefish folder\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 Failed to delete SPLUNK logs in bablefish folder\"",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "echo": false,
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 📥 Download SPLUNK Logs",
+            "type": "shell",
+            "command": "gcloud",
+            "args": [
+                "storage",
+                "cp",
+                "-r",
+                "--do-not-decompress",
+                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/trx.log/\\*",
+                "~/Documents/splunk/bablefish"
+            ],
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 ♻️ Restart SPLUNK (splunkcycle)",
+            "type": "shell",
+            "command": "zsh",
+            "args": [
+                "-i",
+                "-c",
+                "source ~/.zshrc; splunkcycle"
+            ],
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 🌐 Open SPLUNK in Safari",
+            "type": "shell",
+            "command": "open -a Safari 'http://localhost:8000/en-US/'",
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 🧭 SPLUNK workflow 🧭 🗑🧹 📥 ▶ 🌐 ",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "🟩 ⛔ Stop SPLUNK",
+                "🟩 🗑🧹 delete SPLUNK logs🪵",
+                "🟩 📥 Download SPLUNK Logs",
+                "🟩 ▶ Start SPLUNK",
+                "🟩 🌐 Open SPLUNK in Safari"
+            ],
+            "presentation": {
+                "panel": "shared",
+                "reveal": "always"
+            }
+        },
+        // --------------------- SPLUNK ---------------------
+        {
+            "label": "[UTILS] ⏳ Wait 5 seconds",
+            "type": "shell",
+            "command": "sleep 5 && echo '🕐 Waited 5 seconds...'",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "group": "UTILS",
+                "close": true,
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "year",
+            "type": "promptString",
+            "description": "Enter year (e.g. 24 for 2024)",
+            "default": "25"
+        },
+        {
+            "id": "month",
+            "type": "promptString",
+            "description": "Enter month (e.g. 01 for January)",
+            "default": "10"
+        },
+        {
+            "id": "day",
+            "type": "promptString",
+            "description": "Enter start day (e.g. 01)",
+            "default": "01"
+        },
+        {
+            "id": "hour",
+            "type": "promptString",
+            "description": "Enter start hour (e.g. 05)",
+            "default": "02"
+        },
+        {
+            "id": "branch",
+            "type": "promptString",
+            "description": "Enter branch name (e.g. current, develop, feature-xyz)",
+            "default": "current"
+        }
+    ]
+}
