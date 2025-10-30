@@ -1,1 +1,2 @@
 # IBS IDE AI Tasks & Workflows
+Centralized workspace for managing and executing AI-assisted development workflows and automation tasks across IDEs (VS Code & IntelliJ). Includes standardized tasks.json, IntelliJ project settings, and YAML-based workflow definitions for build, deployment, and Splunk automation under the IBS Software environment.
