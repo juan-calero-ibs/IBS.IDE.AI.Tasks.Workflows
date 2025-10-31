@@ -116,7 +116,7 @@
             "problemMatcher": []
         },
         {
-            "label": "🟩🗑🧹 delete SPLUNK logs🪵",
+            "label": "🟩 🗑🧹 delete SPLUNK logs🪵",
             "type": "shell",
             "command": "rm -rf ~/Documents/splunk/bablefish/* && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Deleted SPLUNK logs in bablefish folder\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 Failed to delete SPLUNK logs in bablefish folder\"",
             "presentation": {
@@ -154,7 +154,7 @@
                 "source ~/.zshrc; splunkcycle"
             ],
             "presentation": {
-                "panel": "shared",
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "reveal": "always"
             },
             "problemMatcher": []

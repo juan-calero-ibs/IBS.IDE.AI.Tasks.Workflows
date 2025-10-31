@@ -50,10 +50,10 @@ rules:
       Start workflow names with an emoji and a short descriptor (e.g., '🚀 Start Dev Env',
       '🧠 Commit Helper'). Keep under 4 words.
   
-  # 👇 Workflow Namingd    
+  # 👇 Shared Workflows
   - id: shared_workflows
     match: "*"
     instruction: >
       Allow importing workflows from external path
-      ~/Projects/IBS.IDE.AI.Tasks.Workflows/workflows/.
+      ~/src/github.com/IBS.IDE.AI.Tasks.Workflows/.clinerules/workflows/.
       When a command starts with /@ibs/, resolve it from that directory.
