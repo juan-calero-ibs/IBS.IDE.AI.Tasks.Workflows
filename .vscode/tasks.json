@@ -175,6 +175,7 @@
             "command": "timestamp=$(date +\"%Y%m%d_%H%M%S\") && src=\"$HOME/Documents/splunk/bablefish\" && dest=\"$HOME/Documents/splunk/bablefish_$timestamp\" && if [ -d \"$src\" ]; then mv \"$src\" \"$dest\" && echo \"✅ Backup created: $dest\"; else echo \"⚠️ No folder found at $src\"; fi && mkdir -p \"$src\" && echo \"📁 New folder created at $src\"",
             "presentation": {
                 "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "echo": false,
                 "reveal": "always"
             },
             "problemMatcher": []
@@ -182,9 +183,10 @@
         {
             "label": "🟩 📂 Merge all bablefish backups",
             "type": "shell",
-            "command": "for d in $HOME/Documents/splunk/bablefish_*; do if [ -d \"$d\" ]; then echo \"📦 Copying from $d...\"; cp -r \"$d\"/* \"$HOME/Documents/splunk/bablefish/\" 2>/dev/null || true; fi; done && echo \"✅ All backups merged into $HOME/Documents/splunk/bablefish\"",
+            "command": "for d in $HOME/Documents/splunk/bablefish_*; do if [ -d \"$d\" ]; then echo \"📦 Copying from $d...\"; cp -rn \"$d\"/* \"$HOME/Documents/splunk/bablefish/\" 2>/dev/null || true; fi; done && echo \"✅ All backups copied safely into $HOME/Documents/splunk/bablefish (no overwrites)\"",
             "presentation": {
                 "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "echo": false,
                 "reveal": "always"
             },
             "problemMatcher": []
