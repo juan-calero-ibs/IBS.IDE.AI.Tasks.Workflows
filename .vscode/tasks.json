@@ -75,7 +75,7 @@
                 "echo": false, // 👈 hides the actual command line
                 "panel": "new", // 🆕 this makes each run use a fresh terminal
                 "clear": true,
-                "focus": true 
+                "focus": true
             },
             "problemMatcher": []
         },
@@ -165,6 +165,26 @@
             "command": "open -a Safari 'http://localhost:8000/en-US/'",
             "presentation": {
                 "panel": "shared",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 🗂️ Backup bablefish with timestamp",
+            "type": "shell",
+            "command": "timestamp=$(date +\"%Y%m%d_%H%M%S\") && src=\"$HOME/Documents/splunk/bablefish\" && dest=\"$HOME/Documents/splunk/bablefish_$timestamp\" && if [ -d \"$src\" ]; then mv \"$src\" \"$dest\" && echo \"✅ Backup created: $dest\"; else echo \"⚠️ No folder found at $src\"; fi && mkdir -p \"$src\" && echo \"📁 New folder created at $src\"",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🟩 📂 Merge all bablefish backups",
+            "type": "shell",
+            "command": "for d in $HOME/Documents/splunk/bablefish_*; do if [ -d \"$d\" ]; then echo \"📦 Copying from $d...\"; cp -r \"$d\"/* \"$HOME/Documents/splunk/bablefish/\" 2>/dev/null || true; fi; done && echo \"✅ All backups merged into $HOME/Documents/splunk/bablefish\"",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "reveal": "always"
             },
             "problemMatcher": []
