@@ -135,7 +135,7 @@
                 "cp",
                 "-r",
                 "--do-not-decompress",
-                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/trx.log/\\*",
+                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/\\*",
                 "~/Documents/splunk/bablefish"
             ],
             "presentation": {
@@ -250,6 +250,27 @@
             "type": "promptString",
             "description": "Enter branch name (e.g. current, develop, feature-xyz)",
             "default": "current"
+        },
+        {
+            "id": "logFile",
+            "type": "pickString",
+            "description": "Select log file",
+            "options": [
+                "babelfish",
+                "profiler",
+                "server",
+                "trx-aps",
+                "trx-babelfish",
+                "trx-bonotel-rps",
+                "trx-ctrip",
+                "trx-derbysoft",
+                "trx-expedia-rapid-availability",
+                "trx-google",
+                "trx-ota",
+                "trx-tripadvisor",
+                "trx"
+            ],
+            "default": "trx"
         }
     ]
 }
