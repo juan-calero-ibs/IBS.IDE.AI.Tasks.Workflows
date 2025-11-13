@@ -305,7 +305,7 @@
             "id": "patchId",
             "type": "promptString",
             "description": "Patch folder name under cassandra/patches/",
-            "default": "US12689"
+            "default": "US99999"
         },
         {
             "id": "env",
