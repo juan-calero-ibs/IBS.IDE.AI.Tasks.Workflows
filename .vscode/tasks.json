@@ -135,7 +135,7 @@
                 "cp",
                 "-r",
                 "--do-not-decompress",
-                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/\\*",
+                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/\\*${input:serverURL}\\*",
                 "~/Documents/splunk/bablefish"
             ],
             "presentation": {
@@ -218,6 +218,30 @@
                 "close": true,
             },
             "problemMatcher": []
+        },
+        // --------------------- Run Patch ---------------------
+        {
+            "label": "🩹🚀 Run Patch (macOS/Linux)",
+            "type": "shell",
+            "command": "sh migrateData.sh -e ${input:env} -t $TARGET_HOST -p $HTTP_ADMIN_PASSWORD -l $LOAD_TOKEN",
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.data/cassandra/patches/${input:patchId}",
+                "env": {
+                    "CASSANDRA_HOST": "${input:cassandraHost}",
+                    "TARGET_HOST": "${input:targetHost}",
+                    "HTTP_ADMIN_PASSWORD": "${input:adminPassword}",
+                    "TARGET": "${input:targetHost}",
+                    "LOAD_TOKEN": "${input:loadToken}",
+                    "MATLOCK_HOST": "${input:matlockHost}",
+                    "SOLR_HOST": "${input:solrHost}"
+                }
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            }
         }
     ],
     "inputs": [
@@ -271,6 +295,67 @@
                 "trx"
             ],
             "default": "trx"
+        },
+        {
+            "id": "serverURL",
+            "type": "promptString",
+            "description": "Enter server URL filter (e.g. ip-10-20-1-8, west, prod.abvprp.com) null value gets all"
+        },
+        {
+            "id": "patchId",
+            "type": "promptString",
+            "description": "Patch folder name under cassandra/patches/",
+            "default": "US12689"
+        },
+        {
+            "id": "env",
+            "type": "pickString",
+            "description": "Environment flag for migrateData.sh (-e)",
+            "options": [
+                "dev",
+                "qa",
+                "stg",
+                "prod"
+            ],
+            "default": "dev"
+        },
+        {
+            "id": "cassandraHost",
+            "type": "promptString",
+            "description": "CASSANDRA_HOST",
+            "default": "localhost"
+        },
+        {
+            "id": "targetHost",
+            "type": "promptString",
+            "description": "TARGET_HOST (APS API/Tomcat)",
+            "default": "http://localhost:8080"
+        },
+        {
+            "id": "matlockHost",
+            "type": "promptString",
+            "description": "MATLOCK_HOST",
+            "default": "http://localhost:8087"
+        },
+        {
+            "id": "solrHost",
+            "type": "promptString",
+            "description": "SOLR_HOST",
+            "default": "http://localhost:8983"
+        },
+        {
+            "id": "adminPassword",
+            "type": "promptString",
+            "description": "HTTP_ADMIN_PASSWORD",
+            "password": true,
+            "default": "password1"
+        },
+        {
+            "id": "loadToken",
+            "type": "promptString",
+            "description": "LOAD_TOKEN",
+            "password": true,
+            "default": "ioanscion2893eionsan28903e23nsinasune9udh23987h239dnqnasiun7qhd2983en31dcjnu982h239d"
         }
     ]
 }
