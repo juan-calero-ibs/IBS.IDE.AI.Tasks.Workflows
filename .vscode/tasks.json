@@ -239,7 +239,7 @@
             "problemMatcher": [],
             "presentation": {
                 "reveal": "always",
-                "panel": "dedicated",
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "clear": true
             }
         }
