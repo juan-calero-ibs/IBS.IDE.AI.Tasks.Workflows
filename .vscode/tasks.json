@@ -300,7 +300,7 @@
             "label": "🐡 🔧 Build APS 🌍 (Java 11)",
             "type": "shell",
             "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; mvn install -DskipTests=true",
-            "options":{
+            "options": {
                 "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.aps",
                 "shell": {
                     "executable": "/bin/zsh",
@@ -367,7 +367,7 @@
                 }
             },
             "presentation": {
-                "panel": "new",
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "reveal": "always"
             },
             "problemMatcher": []
@@ -383,6 +383,23 @@
                 "🐡 🔧 Build External API 🌐 (Java 17)",
                 "🐡 🧱 Build UMT (Java 17)",
             ],
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🔐 Install Babelfish Cert (all jenv JDKs)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "BABELFISH_KEYSTORE=\"$HOME/src/github.com/aboveproperty/aboveproperty.umt/config/babelfish.keystore\"; if [ ! -f \"$BABELFISH_KEYSTORE\" ]; then echo \"❌ Babelfish keystore not found at $BABELFISH_KEYSTORE\"; exit 1; fi; echo \"Using keystore: $BABELFISH_KEYSTORE\"; for v in $(jenv versions --bare); do JH=\"$HOME/.jenv/versions/$v\"; if [[ \"$v\" == 1.8* || \"$v\" == *1.8* ]]; then CACERT=\"$JH/jre/lib/security/cacerts\"; else CACERT=\"$JH/lib/security/cacerts\"; fi; if [ -f \"$CACERT\" ]; then echo \"🔐 Importing into $v ($CACERT) ...\"; export JAVA_HOME=\"$JH\"; sudo keytool -importkeystore -srckeystore \"$BABELFISH_KEYSTORE\" -destkeystore \"$CACERT\" -deststorepass changeit -srcstorepass babelfish; echo \"✓ Done for $v -> $CACERT\"; echo; else echo \"✗ $v (no cacerts found at $CACERT)\"; fi; done"
+            ],
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.umt"
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
             "problemMatcher": []
         }
     ],
