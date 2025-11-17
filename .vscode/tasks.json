@@ -242,6 +242,148 @@
                 "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "clear": true
             }
+        },
+        // --------------------- UMT / Bablefish 🐡 ---------------------
+        {
+            "label": "🐡 🧱 Build UMT (Java 17)",
+            "type": "shell",
+            "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; mvn clean install -DskipTests=true",
+            "options": {
+                "cwd": "${env:HOME}//src/github.com/aboveproperty/aboveproperty.umt",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 Start UMT",
+            "type": "shell",
+            "command": "java -jar $(ls target/babelfish-0.993.0.jar | head -n 1) server config/abvprp-dev/umt.yml",
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.umt",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🧱 Build & Start UMT",
+            "dependsOn": [
+                "🐡 🧱 Build UMT (Java 17)",
+                "🐡 Start UMT"
+            ],
+            "dependsOrder": "sequence"
+        },
+        {
+            "label": "🐡 🔍 Open UMT Ping",
+            "type": "shell",
+            "command": "open https://localhost:8580/umt/v1/ping",
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🔧 Build APS 🌍 (Java 11)",
+            "type": "shell",
+            "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; mvn install -DskipTests=true",
+            "options":{
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.aps",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🔧 Build APS-Java-Client 🌍 (Java 11)",
+            "type": "shell",
+            "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; mvn install -DskipTests=true",
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.aps-java-client",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🔧 Build OTA 🧳 (Java 17)",
+            "type": "shell",
+            "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; mvn install",
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ota",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🔧 Build External API 🌐 (Java 17)",
+            "type": "shell",
+            "command": "export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home; export PATH=$JAVA_HOME/bin:$PATH; ./mvn_install.sh",
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.external-api",
+                "shell": {
+                    "executable": "/bin/zsh",
+                    "args": [
+                        "-c"
+                    ]
+                }
+            },
+            "presentation": {
+                "panel": "new",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "🐡 🧵 Build All Projects (APS → UMT)",
+            "type": "shell",
+            "command": "echo \"Starting full APS/UMT build…\"",
+            "dependsOn": [
+                "🐡 🔧 Build APS 🌍 (Java 11)",
+                "🐡 🔧 Build APS-Java-Client 🌍 (Java 11)",
+                "🐡 🔧 Build OTA 🧳 (Java 17)",
+                "🐡 🔧 Build External API 🌐 (Java 17)",
+                "🐡 🧱 Build UMT (Java 17)",
+            ],
+            "problemMatcher": []
         }
     ],
     "inputs": [
