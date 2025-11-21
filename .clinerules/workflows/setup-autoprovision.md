@@ -114,7 +114,7 @@ UMT_URL_DEFAULT
 Set it to:
 
 ```text
-http://localhost:8580
+https://localhost:8580
 ```
 
 ---
@@ -138,7 +138,7 @@ Look for **Property Reference**.
 Example:
 
 ```text
-381429
+3814029
 ```
 
 ---
