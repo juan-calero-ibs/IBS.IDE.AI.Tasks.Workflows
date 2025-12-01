@@ -135,7 +135,7 @@
                 "cp",
                 "-r",
                 "--do-not-decompress",
-                "gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/\\*${input:serverURL}\\*",
+                "'gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/*${input:serverURL}*'",
                 "~/Documents/splunk/bablefish"
             ],
             "presentation": {
