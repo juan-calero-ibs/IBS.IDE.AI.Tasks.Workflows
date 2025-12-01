@@ -267,7 +267,7 @@
                 "panel": "new",
                 "clear": true
             }
-        }
+        },
         // --------------------- UMT / Bablefish 🐡 ---------------------
         {
             "label": "🐡 🧱 Build UMT (Java 17)",
