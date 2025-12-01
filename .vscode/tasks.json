@@ -243,6 +243,31 @@
                 "clear": true
             }
         },
+        {
+            "label": "🛢️ 🚀 Run RollForward (macOS/Linux)",
+            "type": "shell",
+            "command": "sh rollForward.sh -e ${input:env} -p $HTTP_ADMIN_PASSWORD -c $CASSANDRA_HOST -t $TARGET_HOST -l $LOAD_TOKEN -s $SOLR_HOST",
+            "options": {
+                // Path al repo aboveproperty.sql
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.sql/cassandra/patches/${input:patchId}",
+                "env": {
+                    "CASSANDRA_HOST": "${input:cassandraHost}",
+                    "TARGET_HOST": "${input:targetHost}",
+                    "HTTP_ADMIN_PASSWORD": "${input:adminPassword}",
+                    "LOAD_TOKEN": "${input:loadToken}",
+                    "SOLR_HOST": "${input:solrHost}",
+                    // 👇 Aquí viene la magia
+                    "PATH": "/opt/abvprp/apache-cassandra/bin:${env:PATH}",
+                    "PYENV_VERSION": "2.7.18"
+                }
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            }
+        }
         // --------------------- UMT / Bablefish 🐡 ---------------------
         {
             "label": "🐡 🧱 Build UMT (Java 17)",
@@ -401,6 +426,174 @@
                 "reveal": "always"
             },
             "problemMatcher": []
+        },
+        {
+            "label": "🔥 1️⃣ Nucleus: Clone repos",
+            "type": "shell",
+            "command": "sh clone.sh",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-nucleus-workspace"
+            }
+        },
+        {
+            "label": "🔥 1️⃣ PCC: Clone repos",
+            "type": "shell",
+            "command": "sh clone.sh",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-pcc-workspace"
+            }
+        },
+        // --------------------- 🔥 UI Setup with Nucleus and PCC Workspaces ---------------------
+        {
+            "label": "🔥 2️⃣ Nucleus: yarn install",
+            "type": "shell",
+            "command": "yarn install",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-nucleus-workspace/packages/aboveproperty.ux-nucleus"
+            }
+        },
+        {
+            "label": "🔥 2️⃣ PCC: yarn install",
+            "type": "shell",
+            "command": "yarn install",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-pcc-workspace/packages/aboveproperty.ux-pcc"
+            }
+        },
+        {
+            "label": "🔥 Nucleus: Ember server",
+            "type": "shell",
+            "command": "ember server --proxy http://localhost:8080",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-nucleus-workspace/packages/aboveproperty.ux-nucleus"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "ember",
+                "fileLocation": [
+                    "relative",
+                    "${env:HOME}/src/github.com/aboveproperty"
+                ],
+                "pattern": [
+                    {
+                        "regexp": "^(.*?): line (\\d+), col (\\d+), (Error|Warning): (.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "message": 5
+                    },
+                    {
+                        "regexp": "^Error: (.*)$",
+                        "severity": 0,
+                        "message": 1
+                    },
+                    {
+                        "regexp": "^(.*?):(\\d+):(\\d+): (error|warning) (.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "message": 5
+                    }
+                ]
+            }
+        },
+        {
+            "label": "🔥 PCC: Ember server",
+            "type": "shell",
+            "command": "ember server --proxy http://localhost:8080",
+            "presentation": {
+                "panel": "new", // 🆕 this makes each run use a fresh terminal 
+                "reveal": "always"
+            },
+            "options": {
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.ux-pcc-workspace/packages/aboveproperty.ux-pcc"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "ember",
+                "fileLocation": [
+                    "relative",
+                    "${env:HOME}/src/github.com/aboveproperty"
+                ],
+                "pattern": [
+                    {
+                        "regexp": "^(.*?): line (\\d+), col (\\d+), (Error|Warning): (.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "message": 5
+                    },
+                    {
+                        "regexp": "^Error: (.*)$",
+                        "severity": 0,
+                        "message": 1
+                    },
+                    {
+                        "regexp": "^(.*?):(\\d+):(\\d+): (error|warning) (.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "message": 5
+                    }
+                ]
+            }
+        },
+        {
+            "label": "🔥🔥 3️⃣ Start All Ember (Nucleus + PCC)",
+            "dependsOn": [
+                "🔥 Nucleus: Ember server",
+                "🔥 PCC: Ember server"
+            ],
+            "dependsOrder": "parallel",
+        },
+        {
+            "label": "🔥 📡 Check Ember Status",
+            "type": "shell",
+            "command": "lsof -i :4200 >/dev/null 2>&1 && echo 'Ember is RUNNING 🔥' || echo 'Ember is STOPPED ❌'",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": false,
+                "reveal": "always",
+                "panel": "dedicated",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+        {
+            "label": "🔥 🛑 Stop Ember",
+            "type": "shell",
+            "command": "kill -9 $(lsof -t -i :4200) 2>/dev/null || true; kill -9 $(lsof -t -i :4201) 2>/dev/null || true; echo 'Ember stopped 🛑'",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "showReuseMessage": false,
+                "clear": true
+            }
         }
     ],
     "inputs": [
