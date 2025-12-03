@@ -5,7 +5,6 @@ if (pm.response.code === 200) {
 
     let reservation = jsonData.reservation || {};
     let reservationId = "N/A";
-  null;
 
     // 🟢 reservationID desde comments[0]
     if (reservation.comments && reservation.comments.length > 0) {
@@ -41,18 +40,21 @@ if (pm.response.code === 200) {
     let status = reservation.status || "N/A";
     let statusEmoji = status === "BOOK" ? "✅" : (status === "CANCEL" ? "❌" : "⚪️");
 
+    // 🔗 External Reservation Number (channel reservation reference)
+    let externalReservationNumber = reservation.externalReservationNumber || "N/A";
+
     // 🏨 Reservation-level info
     let checkinDate = reservation.checkinDate || null;
     let checkoutDate = reservation.checkoutDate || null;
     let creationDate = reservation.creationDate || null; // keep null if missing so we can safely format
 
-// 👇 Nuevo: distintos nombres posibles del campo de cancelación
-let cancellationDate =
-  reservation.cancellationDate ||   // inglés estándar
-  reservation.cancelationDate ||    // variante con 1 "l"
-  reservation.cancelledDate  ||     // otra variante (UK)
-  reservation.cancelDate      ||    // abreviado
-  null;
+    // 👇 Distintos nombres posibles del campo de cancelación
+    let cancellationDate =
+      reservation.cancellationDate ||   // inglés estándar
+      reservation.cancelationDate ||    // variante con 1 "l"
+      reservation.cancelledDate  ||     // otra variante (UK)
+      reservation.cancelDate      ||    // abreviado
+      null;
    
     let creationChannels = reservation.creationChannelCodeList || [];
     let reservationType = reservation.reservationType || "N/A";
@@ -102,6 +104,7 @@ let cancellationDate =
       const m = iso.match(/([+-]\d{4})$/);
       return m ? `UTC${m[1]}` : "UTC";
     }
+
     function dateAdjustedToIsoOffset(iso) {
       const m = iso && iso.match(/([+-])(\d{2})(\d{2})$/);
       const d = new Date(iso);
@@ -112,6 +115,7 @@ let cancellationDate =
       const offsetMinutes = sign * (hh * 60 + mm);
       return new Date(d.getTime() + offsetMinutes * 60 * 1000);
     }
+
     function fmtDateISOToPrettyRespectingOffset(iso) {
       if (!iso || typeof iso !== 'string') return { dateStr: "N/A", timeStr: "" };
       const adj = dateAdjustedToIsoOffset(iso);
@@ -131,6 +135,7 @@ let cancellationDate =
       const timeStr = `${map.hour}:${map.minute}`;
       return { dateStr, timeStr };
     }
+
     function fullDateLine(iso) {
       if (!iso || typeof iso !== 'string') return "N/A";
       const { dateStr, timeStr } = fmtDateISOToPrettyRespectingOffset(iso);
@@ -156,14 +161,16 @@ let cancellationDate =
       const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
       return `${map.year}/${map.month}/${map.day}/${map.hour}`;
     }
+
     function creationLineFormat(iso) {
       if (!iso || typeof iso !== 'string') return "N/A";
       return `${iso} ❗ ${fmtYYMMDDHH24FromIso(iso)}`;
     }
+
     const creationLine = creationDate ? creationLineFormat(creationDate) : "N/A";
     const cancellationLine = cancellationDate ? creationLineFormat(cancellationDate) : "N/A";
 
-
+    // 🧾 gcloud commands for Splunk logs
     const GCLOUD_BUCKET = "gs://abvprp-logs-fluentd/logs";
     const GCLOUD_LOCAL  = "~/Documents/splunk/bablefish";
 
@@ -172,7 +179,7 @@ let cancellationDate =
       : "";
 
     const cancellationCmd = cancellationDate
-      ? `gcloud storage cp -r --do-not-decompress ${GCLOUD_BUCKET}/${fmtYYMMDDHH24FromIso(cancellationDate)}/trx.log/** ${GCLOUD_LOCAL}`
+      ? `gcloud storage cp -r --do-not-decompress '${GCLOUD_BUCKET}/${fmtYYMMDDHH24FromIso(cancellationDate)}/trx.log/**' ${GCLOUD_LOCAL}`
       : "";
 
     // 🏨 Product Calendar entries
@@ -249,6 +256,7 @@ let cancellationDate =
     if (reservation.reservationID) console.log("🆔 reservationID (top-level):", reservation.reservationID);
     console.log("✅ reservationID usado:", reservationId);
 
+    console.log("🔗 External Reservation Number:", externalReservationNumber);
     console.log("🏨 Hotel (externalCustomerReference):", hotelCode);
     console.log("🔢 Reservation Number:", reservationNumber);
     console.log("🔖 Status:", status);
@@ -353,6 +361,7 @@ let cancellationDate =
             <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:13px; width:100%;">
                 <tr><th align="left">🔢 Reservation Number</th><td>${reservationNumber}</td></tr>
                 <tr><th align="left">🆔 Reservation ID</th><td>${reservationId}</td></tr>
+                <tr><th align="left">🔗 External Reservation #</th><td>${externalReservationNumber}</td></tr>
                 <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
                 <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
                 <tr>
@@ -363,15 +372,12 @@ let cancellationDate =
                 <tr><th align="left">📅 Check-in</th><td>${checkinLine}</td></tr>
                 <tr><th align="left">📆 Check-out</th><td>${checkoutLine}</td></tr>
                 <tr><th align="left">🕓 Creation Date</th><td>${creationLine}</td></tr>
-                          <tr><th>📁 download splunk command</th>
-              <td><code>${creationCmd}</code></td></tr>
-                <!-- 👇 Nuevo: debajo de creationDate -->
+                <tr><th>📁 download splunk command</th>
+                    <td><code>${creationCmd}</code></td></tr>
                 <tr><th align="left">🛑 Cancellation Date</th><td>${cancellationLine}</td></tr>
-
-          <tr><th>📁 download splunk command</th>
-              <td><code>${cancellationCmd}</code></td></tr>
+                <tr><th>📁 download splunk command</th>
+                    <td><code>${cancellationCmd}</code></td></tr>
                 <tr><th align="left">🌐 Creation Channels</th><td>${creationChannels.join(" 🚇 ")}</td></tr>
-
             </table>
 
             <h4 style="margin-top:20px;">🏨 Product Calendar Details</h4>
