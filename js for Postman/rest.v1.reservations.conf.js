@@ -220,6 +220,8 @@ if (pm.response.code === 200) {
                 lastName: p.name || "",
                 partyType: p.partyType || "",
                 primary: p.primaryYN === "Y" ? "⭐️" : "⚪️",
+                // 👶 CHILD_AGE desde udfValues.CHILD_AGE
+                childAge: (p.udfValues && p.udfValues.CHILD_AGE) ? p.udfValues.CHILD_AGE : "",
                 fkReference: p.fkReference || "",
                 fkID: p.fkID || ""
             });
@@ -331,6 +333,7 @@ if (pm.response.code === 200) {
             <td>${p.lastName}</td>
             <td>${p.partyType}</td>
             <td style="text-align:center;">${p.primary}</td>
+            <td>${p.childAge}</td>
             <td>${p.fkReference}</td>
             <td>${p.fkID}</td>
         </tr>
@@ -410,6 +413,7 @@ if (pm.response.code === 200) {
                         <th>Last Name</th>
                         <th>Type</th>
                         <th>⭐️ Primary</th>
+                        <th>Child Age</th>
                         <th>FK Reference</th>
                         <th>FK ID</th>
                     </tr>
