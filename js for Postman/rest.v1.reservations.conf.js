@@ -175,11 +175,11 @@ if (pm.response.code === 200) {
     const GCLOUD_LOCAL  = "~/Documents/splunk/bablefish";
 
     const creationCmd = creationDate
-      ? `gcloud storage cp -r --do-not-decompress '${GCLOUD_BUCKET}/${fmtYYMMDDHH24FromIso(creationDate)}/trx.log/**' ${GCLOUD_LOCAL}`
+      ? `gcloud storage cp -r --do-not-decompress '${GCLOUD_BUCKET}/20${fmtYYMMDDHH24FromIso(creationDate)}/trx.log/**' ${GCLOUD_LOCAL}`
       : "";
 
     const cancellationCmd = cancellationDate
-      ? `gcloud storage cp -r --do-not-decompress '${GCLOUD_BUCKET}/${fmtYYMMDDHH24FromIso(cancellationDate)}/trx.log/**' ${GCLOUD_LOCAL}`
+      ? `gcloud storage cp -r --do-not-decompress '${GCLOUD_BUCKET}/20${fmtYYMMDDHH24FromIso(cancellationDate)}/trx.log/**' ${GCLOUD_LOCAL}`
       : "";
 
     // 🏨 Product Calendar entries
@@ -364,7 +364,7 @@ if (pm.response.code === 200) {
             <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:13px; width:100%;">
                 <tr><th align="left">🔢 Reservation Number</th><td>${reservationNumber}</td></tr>
                 <tr><th align="left">🆔 Reservation ID</th><td>${reservationId}</td></tr>
-                <tr><th align="left">🔗 External Reservation #</th><td>${externalReservationNumber}</td></tr>
+                <tr><th align="left">🔗 External Resv #<i><sub>Tour Operator Order Number</sub></i></th><td>${externalReservationNumber}</td></tr>
                 <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
                 <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
                 <tr>
