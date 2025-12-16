@@ -38,15 +38,106 @@ const channelEmojis = {
   "N/A": "❓"
 };
 
-// ===== 4) Helper: pretty-print JSON =====
+// ===== 4) Helpers: detect + pretty JSON/XML =====
+function looksLikeXml(str) {
+  if (typeof str !== "string") return false;
+  const s = str.trim();
+  // basic heuristics: starts with "<", contains a closing tag or xml prolog
+  return s.startsWith("<") && (s.includes("</") || s.startsWith("<?xml"));
+}
+
+function looksLikeJson(str) {
+  if (typeof str !== "string") return false;
+  const s = str.trim();
+  return (s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"));
+}
+
+function formatXml(xml) {
+  try {
+    const s = String(xml ?? "").trim();
+    if (!s) return "∅";
+
+    // Minify-ish first (remove whitespace between tags) to normalize
+    const normalized = s.replace(/>\s+</g, "><");
+
+    // Indent by splitting on tag boundaries
+    const tokens = normalized.replace(/</g, "\n<").split("\n").filter(Boolean);
+
+    let indent = 0;
+    const out = tokens.map(line => {
+      const l = line.trim();
+
+      // Decrease indent on closing tags
+      if (/^<\/.+>/.test(l)) indent = Math.max(indent - 1, 0);
+
+      const padded = "  ".repeat(indent) + l;
+
+      // Increase indent on opening tags that are not self-closing and not xml declaration
+      if (
+        /^<[^!?\/][^>]*?>$/.test(l) &&   // opening tag
+        !/\/>$/.test(l) &&               // not self-closing
+        !/^<\?xml/.test(l)               // not prolog
+      ) {
+        indent += 1;
+      }
+
+      return padded;
+    });
+
+    return out.join("\n");
+  } catch {
+    return String(xml);
+  }
+}
+
 function safePretty(val) {
   try {
     if (val == null) return "∅";
-    if (typeof val === "string") return JSON.stringify(JSON.parse(val.trim()), null, 2);
-    if (typeof val === "object") return JSON.stringify(val, null, 2);
-    return String(val);
+
+    // If it's already an object (JSON), pretty it
+    if (typeof val === "object") {
+      return JSON.stringify(val, null, 2);
+    }
+
+    // It's a string: decide JSON vs XML vs plain text
+    const s = String(val).trim();
+    if (!s) return "∅";
+
+    if (looksLikeJson(s)) {
+      return JSON.stringify(JSON.parse(s), null, 2);
+    }
+
+    if (looksLikeXml(s)) {
+      return formatXml(s);
+    }
+
+    // Fallback: return as-is
+    return s;
   } catch {
     return String(val);
+  }
+}
+
+// Extract firstName safely from messageData IF JSON.
+// If XML, we'll leave firstName blank unless you later want XML parsing.
+function extractFirstName(messageData) {
+  try {
+    if (messageData == null) return "";
+
+    if (typeof messageData === "object") {
+      return messageData?.contactPerson?.firstName || "";
+    }
+
+    const s = String(messageData).trim();
+    if (looksLikeJson(s)) {
+      const msg = JSON.parse(s);
+      return msg?.contactPerson?.firstName || "";
+    }
+
+    // XML or unknown format: don't guess (no XML parser here)
+    return "";
+  } catch {
+    return "";
   }
 }
 
@@ -54,14 +145,7 @@ function safePretty(val) {
 const rows = traces.map(t => {
   const emoji = channelEmojis[t.channelCode] || "❔";
 
-  // 🧾 Try to extract firstName from messageData.contactPerson.firstName
-  let firstName = "";
-  try {
-    const msg = typeof t.messageData === "string" ? JSON.parse(t.messageData) : t.messageData;
-    firstName = msg?.contactPerson?.firstName || "";
-  } catch {
-    firstName = "";
-  }
+  const firstName = extractFirstName(t.messageData);
 
   const fkRef = t.fkReference || "N/A";
   const fkRefWithName = firstName ? `${fkRef}(${firstName})` : fkRef;
@@ -84,7 +168,7 @@ const template = `
   th { font-size: 12px; color: #666; text-transform: uppercase; background:#fafafa; }
   details { margin: 4px 0; }
   summary { cursor: pointer; font-weight: 600; }
-  pre { background: #0b1020; color: #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; font-size: 12px; }
+  pre { background: #0b1020; color: #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; font-size: 12px; white-space: pre; }
   .muted { font-size:12px; color:#666; margin:8px 0 12px; }
   h2 { margin-top: 0; }
 </style>
@@ -112,7 +196,7 @@ const template = `
 {{/if}}
 
 <h2>📜 Message Traces (<span style="color:#888;">{{rows.length}}</span>)</h2>
-<div class="muted">Expand <b>messageData</b> below to view parsed JSON content.</div>
+<div class="muted">Expand <b>messageData</b> below to view parsed JSON/XML content.</div>
 
 <table>
   <thead>
@@ -134,8 +218,8 @@ const template = `
           <td>{{fkReference}}</td>
           <td>
             <details>
-              <summary>Show parsed messageData</summary>
-              <pre>{{{messageDataPretty}}}</pre>
+              <summary>Show formatted messageData</summary>
+              <pre>{{messageDataPretty}}</pre>
             </details>
           </td>
         </tr>
@@ -149,5 +233,3 @@ const template = `
 
 // ===== 7) Render =====
 pm.visualizer.set(template, { rows, channels, channelEmojis });
-
-
