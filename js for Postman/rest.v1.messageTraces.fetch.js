@@ -134,12 +134,43 @@ function extractFirstName(messageData) {
       return msg?.contactPerson?.firstName || "";
     }
 
-    // XML or unknown format: don't guess (no XML parser here)
     return "";
   } catch {
     return "";
   }
 }
+
+// ===== 4.5) Reservation ID (since all traces are same reservation) =====
+// Prefer fkId (canonical internal reservation UUID). If missing, try distributorResId from messageData JSON.
+function extractDistributorResId(messageData) {
+  try {
+    if (messageData == null) return "";
+
+    if (typeof messageData === "object") {
+      return messageData?.reservationIds?.distributorResId || "";
+    }
+
+    const s = String(messageData).trim();
+    if (looksLikeJson(s)) {
+      const msg = JSON.parse(s);
+      return msg?.reservationIds?.distributorResId || "";
+    }
+
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+const fkIdReservation =
+  (traces.find(t => t && t.fkId)?.fkId) ||
+  (traces[0] && traces[0].fkId) ||
+  "";
+
+const distributorResId =
+  traces.map(t => extractDistributorResId(t.messageData)).find(v => v) || "";
+
+const reservationId = fkIdReservation || distributorResId || "N/A";
 
 // ===== 5) Build rows =====
 const rows = traces.map(t => {
@@ -159,7 +190,7 @@ const rows = traces.map(t => {
   };
 });
 
-// ===== 6) Template with Channels + Message Traces =====
+// ===== 6) Template with Reservation + Channels + Message Traces =====
 const template = `
 <style>
   body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#111; background:#fff; }
@@ -171,7 +202,17 @@ const template = `
   pre { background: #0b1020; color: #e5e7eb; border-radius: 8px; padding: 10px; overflow: auto; font-size: 12px; white-space: pre; }
   .muted { font-size:12px; color:#666; margin:8px 0 12px; }
   h2 { margin-top: 0; }
+  .pill { display:inline-block; padding:4px 10px; border:1px solid #e5e7eb; border-radius:999px; background:#fafafa; font-size:12px; }
+  .kv { margin: 0 0 14px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
+
+<div class="kv">
+  <span class="pill">🧾 Reservation ID: <code>{{reservationId}}</code></span>
+  {{#if distributorResId}}
+    <span class="pill" style="margin-left:8px;">🏷️ distributorResId: <code>{{distributorResId}}</code></span>
+  {{/if}}
+</div>
 
 <h2>📡 Channels (<span style="color:#888;">{{channels.length}}</span>)</h2>
 {{#if channels.length}}
@@ -232,4 +273,4 @@ const template = `
 `;
 
 // ===== 7) Render =====
-pm.visualizer.set(template, { rows, channels, channelEmojis });
+pm.visualizer.set(template, { rows, channels, channelEmojis, reservationId, distributorResId });
