@@ -106,15 +106,23 @@ if (pm.response.code === 200) {
     }
 
     function dateAdjustedToIsoOffset(iso) {
+      // Normalize ISO offsets like +0000 to +00:00 so Date() can parse reliably
+      const isoNorm = (iso && typeof iso === 'string')
+        ? iso.replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
+        : iso;
+
       const m = iso && iso.match(/([+-])(\d{2})(\d{2})$/);
-      const d = new Date(iso);
+      const d = new Date(isoNorm);
       if (!m || isNaN(d.getTime())) return null;
+
       const sign = m[1] === '-' ? -1 : 1;
       const hh = parseInt(m[2], 10);
       const mm = parseInt(m[3], 10);
       const offsetMinutes = sign * (hh * 60 + mm);
+
       return new Date(d.getTime() + offsetMinutes * 60 * 1000);
     }
+
 
     function fmtDateISOToPrettyRespectingOffset(iso) {
       if (!iso || typeof iso !== 'string') return { dateStr: "N/A", timeStr: "" };
@@ -164,7 +172,19 @@ if (pm.response.code === 200) {
 
     function creationLineFormat(iso) {
       if (!iso || typeof iso !== 'string') return "N/A";
-      return `${iso} ❗ ${fmtYYMMDDHH24FromIso(iso)}`;
+
+      const base = `${iso} ❗ ${fmtYYMMDDHH24FromIso(iso)}`;
+
+      // ⚠️ Splunk online retention: 90 days. Older logs are purged.
+      const isoNorm = iso.replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+      const d = new Date(isoNorm);
+      const days90 = 90 * 24 * 60 * 60 * 1000;
+
+      if (!isNaN(d.getTime()) && (Date.now() - d.getTime()) > days90) {
+        return `${base} ⚠️ Logs Purged`;
+      }
+
+      return base;
     }
 
     const creationLine = creationDate ? creationLineFormat(creationDate) : "N/A";
