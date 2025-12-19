@@ -118,7 +118,7 @@
         {
             "label": "🟩 🗑🧹 delete SPLUNK logs🪵",
             "type": "shell",
-            "command": "rm -rf ~/Documents/splunk/bablefish/* && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Deleted SPLUNK logs in bablefish folder\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 Failed to delete SPLUNK logs in bablefish folder\"",
+            "command": "find \"$HOME/Documents/splunk/bablefish\" -mindepth 1 -delete && echo \"[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Deleted SPLUNK logs in bablefish folder\" || echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 🛑 Failed to delete SPLUNK logs in bablefish folder\"",
             "presentation": {
                 "panel": "new", // 🆕 this makes each run use a fresh terminal 
                 "echo": false,
