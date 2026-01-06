@@ -4,36 +4,41 @@ let jsonData = pm.response.json();
 if (pm.response.code === 200) {
 
     let reservation = jsonData.reservation || {};
-    let reservationId = "N/A";
+let reservationId = "N/A";
 
-    // 🟢 reservationID desde comments[0]
-    if (reservation.comments && reservation.comments.length > 0) {
-        reservationId = reservation.comments[0].reservationID || "N/A";
-    }
+// ✅ PRIMARY: Reservation ID from top-level UUID field: reservation.id
+if (reservation.id) {
+  reservationId = String(reservation.id).trim() || "N/A";
+}
 
-    // 🔁 Fallbacks para obtener reservationId
-    function findReservationIdInProductCalendar(res) {
-      if (!res || !Array.isArray(res.products)) return null;
-      for (const product of res.products) {
-        if (product && Array.isArray(product.productCalendar)) {
-          for (const pc of product.productCalendar) {
-            if (pc && pc.reservationID) return pc.reservationID; // ← de productCalendar
-          }
-        }
+// 🔁 (Optional) keep your old fallbacks ONLY if reservation.id is missing
+function findReservationIdInProductCalendar(res) {
+  if (!res || !Array.isArray(res.products)) return null;
+  for (const product of res.products) {
+    const pcs = product?.productCalendar;
+    if (Array.isArray(pcs)) {
+      for (const pc of pcs) {
+        if (pc?.reservationID) return pc.reservationID;
       }
-      return null;
     }
+  }
+  return null;
+}
 
-    // 1) Si no hubo en comments[0], intenta en productCalendar[].reservationID
-    if (reservationId === "N/A") {
-      const pcId = findReservationIdInProductCalendar(reservation);
-      if (pcId) reservationId = pcId;
-    }
+if (reservationId === "N/A") {
+  const commentId = reservation?.comments?.[0]?.reservationID;
+  if (commentId) reservationId = commentId;
+}
 
-    // 2) Último fallback: por si viene en el tope (reservation.reservationID)
-    if (reservationId === "N/A" && reservation.reservationID) {
-      reservationId = reservation.reservationID;
-    }
+if (reservationId === "N/A") {
+  const pcId = findReservationIdInProductCalendar(reservation);
+  if (pcId) reservationId = pcId;
+}
+
+if (reservationId === "N/A" && reservation.reservationID) {
+  reservationId = reservation.reservationID;
+}
+
 
     // 🔢 Reservation basics + status emoji
     let reservationNumber = reservation.reservationNumber || "N/A";
