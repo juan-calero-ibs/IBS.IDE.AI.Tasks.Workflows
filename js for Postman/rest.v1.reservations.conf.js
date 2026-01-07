@@ -47,6 +47,38 @@ if (pm.response.code === 200) {
   // 🔗 External Reservation Number (channel reservation reference)
   let externalReservationNumber = reservation.externalReservationNumber || "N/A";
 
+  // ✅ Supplier fields (typically same; if not, show comma-separated) — from reservation.products[]
+  function uniqClean(arr) {
+    const out = [];
+    const seen = new Set();
+    (arr || []).forEach(v => {
+      if (v === null || v === undefined) return;
+      const s = String(v).trim();
+      if (!s) return;
+      if (seen.has(s)) return;
+      seen.add(s);
+      out.push(s);
+    });
+    return out;
+  }
+
+  const productsArr = Array.isArray(reservation.products) ? reservation.products : [];
+
+  const supplierReservationNumbers = uniqClean(
+    productsArr.map(p => p?.fulfillmentReservationNumber)
+  );
+
+  const supplierChannelIDs = uniqClean(
+    productsArr.map(p => p?.fulfillmentChannelID)
+  );
+
+  // Display single value if only one, else comma-separated
+  let fulfillmentReservationNumber =
+    supplierReservationNumbers.length ? supplierReservationNumbers.join(", ") : "N/A";
+
+  let fulfillmentChannelID =
+    supplierChannelIDs.length ? supplierChannelIDs.join(", ") : "N/A";
+
   // 🏨 Reservation-level info
   let checkinDate = reservation.checkinDate || null;
   let checkoutDate = reservation.checkoutDate || null;
@@ -299,6 +331,9 @@ if (pm.response.code === 200) {
   console.log("🔗 External Reservation Number:", externalReservationNumber);
   console.log("🏨 Hotel (externalCustomerReference):", hotelCode);
   console.log("🔢 Reservation Number:", reservationNumber);
+  console.log("🏭 Supplier Reservation Number(s):", fulfillmentReservationNumber);
+  console.log("🧬 Supplier Channel ID(s):", fulfillmentChannelID);
+
   console.log("🔖 Status:", status);
   console.log("🧩 Segments:", segments.length, "| 📦 Products:", productCalendars.length, "| 👥 Parties:", parties.length, "| 🔐 Auths:", authEntries.length, "| 🧩 UDF:", udfEntries.length);
 
@@ -504,6 +539,11 @@ if (pm.response.code === 200) {
         <tr><th align="left">🔢 Reservation Number</th><td>${reservationNumber}</td></tr>
         <tr><th align="left">🆔 Reservation ID</th><td>${reservationId}</td></tr>
         <tr><th align="left">🔗 External Resv #<i><sub>Tour Operator Order Number</sub></i></th><td>${externalReservationNumber}</td></tr>
+
+        <!-- ✅ Supplier fields (from products[]) -->
+        <tr><th align="left">🏭 Supplier Reservation Number</th><td>${fulfillmentReservationNumber}</td></tr>
+        <tr><th align="left">🧬 Supplier Channel ID</th><td><code>${fulfillmentChannelID}</code></td></tr>
+
         <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
         <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
         <tr>
