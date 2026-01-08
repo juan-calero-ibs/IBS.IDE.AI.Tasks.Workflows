@@ -651,7 +651,9 @@
         {
             "id": "serverURL",
             "type": "promptString",
-            "description": "Enter server URL filter (e.g. ip-10-20-1-8, west, prod.abvprp.com) null value gets all"
+            "description": "Enter server URL filter (e.g. ip-10-20-1-8, west, prod.abvprp.com) null value gets all",
+            "default": "ip" // Needs to be \"ip\" to make sure downloads the folders and not just the .zip files, 
+                            // because host ip is needed to later download trx-bablefish logs
         },
         {
             "id": "patchId",
