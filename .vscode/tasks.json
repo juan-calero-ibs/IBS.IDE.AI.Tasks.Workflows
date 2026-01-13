@@ -636,6 +636,7 @@
                 "profiler",
                 "server",
                 "trx-aps",
+                "trx-availability",
                 "trx-babelfish",
                 "trx-bonotel-rps",
                 "trx-ctrip",
