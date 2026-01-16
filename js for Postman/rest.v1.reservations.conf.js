@@ -47,6 +47,12 @@ if (pm.response.code === 200) {
   // 🔗 External Reservation Number (channel reservation reference)
   let externalReservationNumber = reservation.externalReservationNumber || "N/A";
 
+  // 🏷️ Property Level Reference (reservation-level)
+  let propertyLevelReference = reservation.propertyLevelReference || "N/A";
+  if (typeof propertyLevelReference === "string") {
+    propertyLevelReference = propertyLevelReference.trim() || "N/A";
+  }
+
   // ✅ Supplier fields (typically same; if not, show comma-separated) — from reservation.products[]
   function uniqClean(arr) {
     const out = [];
@@ -78,6 +84,9 @@ if (pm.response.code === 200) {
 
   let fulfillmentChannelID =
     supplierChannelIDs.length ? supplierChannelIDs.join(", ") : "N/A";
+
+  // ✅ Combined display: Supplier Reservation Number / Property Level Reference
+  let supplierResvAndPLR = `${fulfillmentReservationNumber} / ${propertyLevelReference}`;
 
   // 🏨 Reservation-level info
   let checkinDate = reservation.checkinDate || null;
@@ -332,6 +341,8 @@ if (pm.response.code === 200) {
   console.log("🏨 Hotel (externalCustomerReference):", hotelCode);
   console.log("🔢 Reservation Number:", reservationNumber);
   console.log("🏭 Supplier Reservation Number(s):", fulfillmentReservationNumber);
+  console.log("🏷️ Property Level Reference:", propertyLevelReference);
+  console.log("🏭 Supplier Resv / PLR:", supplierResvAndPLR);
   console.log("🧬 Supplier Channel ID(s):", fulfillmentChannelID);
 
   console.log("🔖 Status:", status);
@@ -531,248 +542,246 @@ if (pm.response.code === 200) {
   `).join("");
 
   // 🎨 Visualizer
-pm.visualizer.set(`
-  <div style="font-family:Arial; padding:10px;">
-    <h3 style="color:green; margin-top:0;">✅ Reservation Summary</h3>
+  pm.visualizer.set(`
+    <div style="font-family:Arial; padding:10px;">
+      <h3 style="color:green; margin-top:0;">✅ Reservation Summary</h3>
 
-    <!-- ✅ NEW: 2x3 header grid -->
-    <table border="1" cellpadding="10"
-           style="border-collapse:collapse; font-size:13px; width:100%; table-layout:fixed;">
-      <tr style="background-color:#f0f9f1;">
-        <!-- Column 1 -->
-        <td style="vertical-align:top; width:33.33%;">
-          <div><b>🔢 Reservation Number</b></div>
-          <div style="margin-bottom:10px;">${reservationNumber}</div>
+      <!-- ✅ NEW: 2x3 header grid -->
+      <table border="1" cellpadding="10"
+             style="border-collapse:collapse; font-size:13px; width:100%; table-layout:fixed;">
+        <tr style="background-color:#f0f9f1;">
+          <!-- Column 1 -->
+          <td style="vertical-align:top; width:33.33%;">
+            <div><b>🔢 Reservation Number</b></div>
+            <div style="margin-bottom:10px;">${reservationNumber}</div>
 
-          <div><b>🆔 Reservation ID</b></div>
-          <div><code>${reservationId}</code></div>
-        </td>
+            <div><b>🆔 Reservation ID</b></div>
+            <div><code>${reservationId}</code></div>
+          </td>
 
-        <!-- Column 2 -->
-        <td style="vertical-align:top; width:33.33%;">
-          <div><b>📄 Corporate Profile <span style="font-weight:normal;">#Tour Operator</span></b></div>
-          <div style="margin-bottom:10px;">
-            ${externalAgreementCode} | <i><sub>External Agreement Code</sub></i>
-          </div>
+          <!-- Column 2 -->
+          <td style="vertical-align:top; width:33.33%;">
+            <div><b>📄 Corporate Profile <span style="font-weight:normal;">#Tour Operator</span></b></div>
+            <div style="margin-bottom:10px;">
+              ${externalAgreementCode} | <i><sub>External Agreement Code</sub></i>
+            </div>
 
-          <div><b>🔗 External Resv # <span style="font-weight:normal;">Tour Operator Order Number</span></b></div>
-          <div>${externalReservationNumber}</div>
-        </td>
+            <div><b>🔗 External Resv # <span style="font-weight:normal;">Tour Operator Order Number</span></b></div>
+            <div>${externalReservationNumber}</div>
+          </td>
 
-        <!-- Column 3 -->
-        <td style="vertical-align:top; width:33.33%;">
-          <div><b>🏭 Supplier Reservation Number</b></div>
-          <div style="margin-bottom:10px;">${fulfillmentReservationNumber}</div>
+          <!-- Column 3 -->
+          <td style="vertical-align:top; width:33.33%;">
+            <div><b>🏭 Supplier Reservation Number/Property Level Reference</b></div>
+            <div style="margin-bottom:10px;">${supplierResvAndPLR}</div>
 
-          <div><b>🧬 Supplier Channel ID</b></div>
-          <div><code>${fulfillmentChannelID}</code></div>
-        </td>
-      </tr>
-
-    </table>
-
-    <!-- Keep the rest the same, but show Status + Type right after separator -->
-    <table border="1" cellpadding="6"
-           style="border-collapse:collapse; font-size:13px; width:100%; margin-bottom:10px;">
-      <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
-      <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
-    </table>
-
-    <!-- Everything below remains the same as your previous content -->
-    <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:13px; width:100%;"
-      <tr><th align="left">🌐 Creation Channels</th><td>${creationChannels.join(" 🚇 ")}</td></tr>
-      <tr><th align="left">🏨 Hotel</th><td>${hotelCode}</td></tr>
-      <tr><th align="left">📅 Check-in</th><td>${checkinLine}</td></tr>
-      <tr><th align="left">📆 Check-out</th><td>${checkoutLine}</td></tr>
-      <tr><th align="left">🕓 Creation Date</th><td>${creationLine}</td></tr>
-      <tr><th>📁 download splunk command</th><td><code>${creationCmd}</code></td></tr>
-      <tr><th align="left">🛑 Cancellation Date</th><td>${cancellationLine}</td></tr>
-      <tr><th>📁 download splunk command</th><td><code>${cancellationCmd}</code></td></tr>
-    </table>
-
-    ${segmentsSection}
-
-    <h4 style="margin-top:20px;">🏨 Product Calendar Details</h4>
-    <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
-      <thead style="background-color:#f0f9f1;">
-        <tr>
-          <th>#</th>
-          <th>Begin</th>
-          <th>Departure</th>
-          <th>Amount</th>
-          <th>Currency</th>
-          <th>Adults</th>
-          <th>Children</th>
-          <th>External Code</th>
-          <th>ProductID</th>
-          <th>PriceID</th>
-          <th>Status</th>
-          <th>Created</th>
+            <div><b>🧬 Supplier Channel ID</b></div>
+            <div><code>${fulfillmentChannelID}</code></div>
+          </td>
         </tr>
-      </thead>
-      <tbody>${productRows}</tbody>
-    </table>
+      </table>
 
-    <h4 style="margin-top:20px;">👥 Parties</h4>
-    <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
-      <thead style="background-color:#f0f9f1;">
-        <tr>
-          <th>#</th>
-          <th>First Name</th>
-          <th>Last Name</th>
-          <th>Type</th>
-          <th>⭐️ Primary</th>
-          <th>Child Age</th>
-          <th>FK Reference</th>
-          <th>FK ID</th>
-        </tr>
-      </thead>
-      <tbody>${partyRows}</tbody>
-    </table>
+      <!-- Keep the rest the same, but show Status + Type right after separator -->
+      <table border="1" cellpadding="6"
+             style="border-collapse:collapse; font-size:13px; width:100%; margin-bottom:10px;">
+        <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
+        <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
+      </table>
 
-    <h4 style="margin-top:20px;">🔐 Authorizations</h4>
-    <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
-      <thead style="background-color:#f0f9f1;">
-        <tr>
-          <th>#</th>
-          <th>Type</th>
-          <th>Reason</th>
-          <th>Last Modified</th>
-          <th>Inactivated</th>
-        </tr>
-      </thead>
-      <tbody>${authRows}</tbody>
-    </table>
+      <!-- Everything below remains the same as your previous content -->
+      <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:13px; width:100%;">
+        <tr><th align="left">🌐 Creation Channels</th><td>${creationChannels.join(" 🚇 ")}</td></tr>
+        <tr><th align="left">🏨 Hotel</th><td>${hotelCode}</td></tr>
+        <tr><th align="left">📅 Check-in</th><td>${checkinLine}</td></tr>
+        <tr><th align="left">📆 Check-out</th><td>${checkoutLine}</td></tr>
+        <tr><th align="left">🕓 Creation Date</th><td>${creationLine}</td></tr>
+        <tr><th>📁 download splunk command</th><td><code>${creationCmd}</code></td></tr>
+        <tr><th align="left">🛑 Cancellation Date</th><td>${cancellationLine}</td></tr>
+        <tr><th>📁 download splunk command</th><td><code>${cancellationCmd}</code></td></tr>
+      </table>
 
-    <h4 style="margin-top:20px;">🧩 UDF Values</h4>
-    <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
-      <thead style="background-color:#f0f9f1;">
-        <tr>
-          <th>#</th>
-          <th>Key</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>${udfRows}</tbody>
-    </table>
-  </div>
+      ${segmentsSection}
 
-  <!-- Script: Get Product / Get Price buttons with collapsible panels + Bearer auto -->
-  <script>
-  (function () {
-    const CFG = ${JSON.stringify(VIZ_CFG)};
-    const q  = (sel, root) => (root||document).querySelector(sel);
-    const qa = (sel, root) => Array.from((root||document).querySelectorAll(sel));
+      <h4 style="margin-top:20px;">🏨 Product Calendar Details</h4>
+      <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
+        <thead style="background-color:#f0f9f1;">
+          <tr>
+            <th>#</th>
+            <th>Begin</th>
+            <th>Departure</th>
+            <th>Amount</th>
+            <th>Currency</th>
+            <th>Adults</th>
+            <th>Children</th>
+            <th>External Code</th>
+            <th>ProductID</th>
+            <th>PriceID</th>
+            <th>Status</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>${productRows}</tbody>
+      </table>
 
-    function authHeader(token){
-      if (!token) return '';
-      return token.startsWith('Bearer ') ? token : ('Bearer ' + token);
-    }
-    async function copy(text){
-      try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
-    }
+      <h4 style="margin-top:20px;">👥 Parties</h4>
+      <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
+        <thead style="background-color:#f0f9f1;">
+          <tr>
+            <th>#</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Type</th>
+            <th>⭐️ Primary</th>
+            <th>Child Age</th>
+            <th>FK Reference</th>
+            <th>FK ID</th>
+          </tr>
+        </thead>
+        <tbody>${partyRows}</tbody>
+      </table>
 
-    async function runFetch({type, id, rowIdx, path, detId, outId, icon}){
-      const det = q('#' + detId + '-' + rowIdx);
-      const out = q('#' + outId + '-' + rowIdx);
-      if (!det || !out) return;
+      <h4 style="margin-top:20px;">🔐 Authorizations</h4>
+      <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
+        <thead style="background-color:#f0f9f1;">
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Reason</th>
+            <th>Last Modified</th>
+            <th>Inactivated</th>
+          </tr>
+        </thead>
+        <tbody>${authRows}</tbody>
+      </table>
 
-      if (!id || id === "N/A") {
+      <h4 style="margin-top:20px;">🧩 UDF Values</h4>
+      <table border="1" cellpadding="6" style="border-collapse:collapse; font-size:12px; width:100%;">
+        <thead style="background-color:#f0f9f1;">
+          <tr>
+            <th>#</th>
+            <th>Key</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>${udfRows}</tbody>
+      </table>
+    </div>
+
+    <!-- Script: Get Product / Get Price buttons with collapsible panels + Bearer auto -->
+    <script>
+    (function () {
+      const CFG = ${JSON.stringify(VIZ_CFG)};
+      const q  = (sel, root) => (root||document).querySelector(sel);
+      const qa = (sel, root) => Array.from((root||document).querySelectorAll(sel));
+
+      function authHeader(token){
+        if (!token) return '';
+        return token.startsWith('Bearer ') ? token : ('Bearer ' + token);
+      }
+      async function copy(text){
+        try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+      }
+
+      async function runFetch({type, id, rowIdx, path, detId, outId, icon}){
+        const det = q('#' + detId + '-' + rowIdx);
+        const out = q('#' + outId + '-' + rowIdx);
+        if (!det || !out) return;
+
+        if (!id || id === "N/A") {
+          det.style.display = '';
+          det.open = true;
+          const sum = det.querySelector('summary');
+          if (sum) sum.textContent = '❌ Missing ' + type + ' id';
+          out.textContent = '❌ Cannot fetch ' + type + ': id is N/A';
+          return;
+        }
+
+        const url = \`\${CFG.protocol}://\` + CFG.host + ':' + CFG.port + \`\${path}/\${id}\`;
         det.style.display = '';
         det.open = true;
+
         const sum = det.querySelector('summary');
-        if (sum) sum.textContent = '❌ Missing ' + type + ' id';
-        out.textContent = '❌ Cannot fetch ' + type + ': id is N/A';
-        return;
+        if (sum) {
+          sum.innerHTML = \`⏳ Fetching \${type} — <code>\${id}</code> · <a href="#" data-copy="\${rowIdx}">copy URL</a>\`;
+          sum.addEventListener('click', (e) => {
+            const a = e.target.closest('a[data-copy]');
+            if (a) {
+              e.preventDefault();
+              copy(url).then(ok => {
+                a.textContent = ok ? 'copied!' : 'copy failed';
+                setTimeout(()=>{ a.textContent='copy URL'; }, 1200);
+              });
+            }
+          }, { once:true });
+        }
+
+        out.textContent = '⏳ GET ' + url + ' ...';
+
+        try {
+          const res = await fetch(url, {
+            method:'GET',
+            headers:{ 'Authorization': authHeader(CFG.sessionToken) }
+          });
+
+          const txt = await res.text();
+          let pretty = txt;
+          try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch {}
+
+          out.textContent = pretty;
+
+          const credHint = (res.status === 401 || res.status === 403) ? ' · 🔐 Check token/permissions' : '';
+          if (sum) sum.innerHTML = \`\${icon} \${type} response — \${res.status} \${res.statusText}\${credHint} — <code>\${id}</code> · <a href="#" data-copy="\${rowIdx}">copy URL</a>\`;
+        } catch (err) {
+          if (sum) sum.textContent = \`❌ Error fetching \${type} — \${id}\`;
+          out.textContent = '❌ Error: ' + (err && err.message ? err.message : String(err));
+        }
       }
 
-      const url = \`\${CFG.protocol}://\`\ + CFG.host + ':' + CFG.port + \`\${path}/\${id}\`;
-      det.style.display = '';
-      det.open = true;
+      // 📦 Buttons: Product
+      qa('[data-action="get-product"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (btn.disabled) return;
+          const original = btn.textContent;
+          btn.disabled = true; btn.textContent = '…';
 
-      const sum = det.querySelector('summary');
-      if (sum) {
-        sum.innerHTML = \`⏳ Fetching \${type} — <code>\${id}</code> · <a href="#" data-copy="\${rowIdx}">copy URL</a>\`;
-        sum.addEventListener('click', (e) => {
-          const a = e.target.closest('a[data-copy]');
-          if (a) {
-            e.preventDefault();
-            copy(url).then(ok => {
-              a.textContent = ok ? 'copied!' : 'copy failed';
-              setTimeout(()=>{ a.textContent='copy URL'; }, 1200);
-            });
-          }
-        }, { once:true });
-      }
+          await runFetch({
+            type:'Product',
+            id: btn.getAttribute('data-productid'),
+            rowIdx: btn.getAttribute('data-row'),
+            path:'/rest/v1/products',
+            detId:'productdet',
+            outId:'productout',
+            icon:'📦'
+          });
 
-      out.textContent = '⏳ GET ' + url + ' ...';
-
-      try {
-        const res = await fetch(url, {
-          method:'GET',
-          headers:{ 'Authorization': authHeader(CFG.sessionToken) }
+          btn.disabled = false; btn.textContent = original;
         });
-
-        const txt = await res.text();
-        let pretty = txt;
-        try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch {}
-
-        out.textContent = pretty;
-
-        const credHint = (res.status === 401 || res.status === 403) ? ' · 🔐 Check token/permissions' : '';
-        if (sum) sum.innerHTML = \`\${icon} \${type} response — \${res.status} \${res.statusText}\${credHint} — <code>\${id}</code> · <a href="#" data-copy="\${rowIdx}">copy URL</a>\`;
-      } catch (err) {
-        if (sum) sum.textContent = \`❌ Error fetching \${type} — \${id}\`;
-        out.textContent = '❌ Error: ' + (err && err.message ? err.message : String(err));
-      }
-    }
-
-    // 📦 Buttons: Product
-    qa('[data-action="get-product"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (btn.disabled) return;
-        const original = btn.textContent;
-        btn.disabled = true; btn.textContent = '…';
-
-        await runFetch({
-          type:'Product',
-          id: btn.getAttribute('data-productid'),
-          rowIdx: btn.getAttribute('data-row'),
-          path:'/rest/v1/products',
-          detId:'productdet',
-          outId:'productout',
-          icon:'📦'
-        });
-
-        btn.disabled = false; btn.textContent = original;
       });
-    });
 
-    // 💰 Buttons: Price
-    qa('[data-action="get-price"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (btn.disabled) return;
-        const original = btn.textContent;
-        btn.disabled = true; btn.textContent = '…';
+      // 💰 Buttons: Price
+      qa('[data-action="get-price"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (btn.disabled) return;
+          const original = btn.textContent;
+          btn.disabled = true; btn.textContent = '…';
 
-        await runFetch({
-          type:'Price',
-          id: btn.getAttribute('data-priceid'),
-          rowIdx: btn.getAttribute('data-row'),
-          path:'/rest/v1/prices',
-          detId:'pricedet',
-          outId:'priceout',
-          icon:'💰'
+          await runFetch({
+            type:'Price',
+            id: btn.getAttribute('data-priceid'),
+            rowIdx: btn.getAttribute('data-row'),
+            path:'/rest/v1/prices',
+            detId:'pricedet',
+            outId:'priceout',
+            icon:'💰'
+          });
+
+          btn.disabled = false; btn.textContent = original;
         });
-
-        btn.disabled = false; btn.textContent = original;
       });
-    });
 
-  })();
-  </script>
-`);
-
+    })();
+    </script>
+  `);
 
 } else {
   console.log("❌ Request failed with status:", pm.response.code);
