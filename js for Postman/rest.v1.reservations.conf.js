@@ -365,6 +365,19 @@
       });
     }
 
+
+    // ⚠️ Status mismatch between reservation and product calendars
+    const productStatusList = uniqClean(
+      productCalendars.map(pc => pc.status).filter(st => st && st !== "N/A")
+    );
+    const productStatusesLabel = productStatusList.length ? productStatusList.join(", ") : "N/A";
+    const statusMismatch =
+      (status && status !== "N/A") &&
+      productStatusList.length &&
+      productStatusList.some(ps => ps !== status);
+
+    const statusWarningEmoji = statusMismatch ? "⚠️" : "";
+
     // 👥 Parties
     let parties = [];
     if (reservation.parties && Array.isArray(reservation.parties)) {
@@ -648,7 +661,7 @@
 
         <table border="1" cellpadding="6"
                style="border-collapse:collapse; font-size:13px; width:100%; margin-bottom:10px;">
-          <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status}</td></tr>
+          <tr><th align="left">🔖 Status</th><td>${statusEmoji} ${status} ${statusWarningEmoji}${statusMismatch ? "<div style=\"margin-top:4px; font-size:11px; color:#a85d00;\">⚠️ Product Status(es): <b>" + productStatusesLabel + "</b></div>" : ""}</td></tr>
           <tr><th align="left">📘 Type</th><td>${reservationType}</td></tr>
         </table>
 
