@@ -670,6 +670,7 @@
                 "dev",
                 "qa",
                 "stg",
+                "stage",
                 "prod"
             ],
             "default": "dev"
