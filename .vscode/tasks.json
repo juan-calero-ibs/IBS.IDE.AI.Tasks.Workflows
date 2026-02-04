@@ -691,6 +691,7 @@
             "options": [
                 "migrateData.sh",
                 "rollForward.sh",
+                "rollForward_v2.sh",
                 "rollBackward.sh",
             ],
             "default": "migrateData.sh"
