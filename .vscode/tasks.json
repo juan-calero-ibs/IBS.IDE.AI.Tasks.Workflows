@@ -223,9 +223,9 @@
         {
             "label": "🩹🚀 Run Patch (macOS/Linux)",
             "type": "shell",
-            "command": "sh migrateData.sh -e ${input:env} -t $TARGET_HOST -p $HTTP_ADMIN_PASSWORD -l $LOAD_TOKEN",
+            "command": "zsh -lc 'sh ${input:patchScript} -e ${input:env} -t $TARGET_HOST -p $HTTP_ADMIN_PASSWORD -c $CASSANDRA_HOST -l $LOAD_TOKEN'",
             "options": {
-                "cwd": "${env:HOME}/src/github.com/aboveproperty/aboveproperty.data/cassandra/patches/${input:patchId}",
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/${input:repoName}/cassandra/patches/${input:patchId}",
                 "env": {
                     "CASSANDRA_HOST": "${input:cassandraHost}",
                     "TARGET_HOST": "${input:targetHost}",
@@ -243,6 +243,28 @@
                 "clear": true
             }
         },
+
+        // need to change rollForward to use run_cqlsh
+        // resolver cqlsh dentro del script (sin depender de aliases)
+        // Haz este cambio mínimo: define un “wrapper” de cqlsh al inicio (después de parseArguments / validaciones) y reemplaza la llamada.
+        // 1) Agrega esto (por ejemplo justo antes del while read alter; do)
+        // # Resolve cqlsh without relying on shell aliases (VS Code tasks don't load aliases)
+        // CQLSH_BIN="${CQLSH_BIN:-/opt/abvprp/apache-cassandra/bin/cqlsh}"
+        // CQLSH_PYENV_VERSION="${CQLSH_PYENV_VERSION:-2.7.18}"
+        
+        // if [[ ! -x "$CQLSH_BIN" ]]; then
+        //   die "ERROR: cqlsh not found/executable at $CQLSH_BIN. Set CQLSH_BIN or install Cassandra client."
+        // fi
+        
+        // run_cqlsh() {
+        //   # Use pyenv version if available (matches your alias behavior)
+        //   PYENV_VERSION="$CQLSH_PYENV_VERSION" "$CQLSH_BIN" --ssl "$@"
+        // }
+        // 2) Reemplaza esta línea:
+        // cqlsh --ssl -k abvprp ${CASSANDRA_HOST} --request-timeout=300 --execute="${alter}"
+        // por esta:
+        // run_cqlsh -k abvprp "${CASSANDRA_HOST}" --request-timeout=300 --execute="${alter}"
+
         {
             "label": "🛢️ 🚀 Run RollForward (macOS/Linux)",
             "type": "shell",
@@ -661,6 +683,27 @@
             "type": "promptString",
             "description": "Patch folder name under cassandra/patches/",
             "default": "US99999"
+        },
+        {
+            "id": "patchScript",
+            "type": "pickString",
+            "description": "Select patch script, typically migrateData.sh is for .data repo and rollForward.sh for .sql repo",
+            "options": [
+                "migrateData.sh",
+                "rollForward.sh",
+                "rollBackward.sh",
+            ],
+            "default": "migrateData.sh"
+        },
+        {
+            "id": "repoName",
+            "type": "pickString",
+            "description": "Select repository name",
+            "options": [
+                "aboveproperty.data",
+                "aboveproperty.sql",
+            ],
+            "default": "aboveproperty.data"
         },
         {
             "id": "env",
