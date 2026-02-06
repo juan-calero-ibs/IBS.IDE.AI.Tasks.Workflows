@@ -135,7 +135,7 @@
                 "cp",
                 "-r",
                 "--do-not-decompress",
-                "'gs://abvprp-logs-fluentd/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/*${input:serverURL}*'",
+                "'gs://${input:bucket}/logs/20${input:year}/${input:month}/${input:day}/${input:hour}/${input:logFile}.log/*${input:serverURL}*'",
                 "~/Documents/splunk/bablefish"
             ],
             "presentation": {
@@ -648,6 +648,17 @@
             "type": "promptString",
             "description": "Enter branch name (e.g. current, develop, feature-xyz)",
             "default": "current"
+        },
+        {
+            "id": "bucket",
+            "type": "pickString",
+            "description": "Select AWS bucket name |\n starting 14-JAN-26 STAGE in \"abvprp-logs-fluentd-stage\" |\n starting 21-JAN-26 PROD in \"abvprp-logs-fluentd-prod\" | \n Except for babelfish and trx-babelfish those are in \"abvprp-logs-fluentd\"",
+            "options": [
+                "abvprp-logs-fluentd",
+                "abvprp-logs-fluentd-stage",
+                "abvprp-logs-fluentd-prod",
+            ],
+            "default": "abvprp-logs-fluentd"
         },
         {
             "id": "logFile",
