@@ -225,7 +225,7 @@
             "type": "shell",
             "command": "zsh -lc 'sh ${input:patchScript} -e ${input:env} -t $TARGET_HOST -p $HTTP_ADMIN_PASSWORD -c $CASSANDRA_HOST -l $LOAD_TOKEN'",
             "options": {
-                "cwd": "${env:HOME}/src/github.com/aboveproperty/${input:repoName}/cassandra/patches/${input:patchId}",
+                "cwd": "${env:HOME}/src/github.com/aboveproperty/${input:repoName}/cassandra/patches/${input:patchId}${input:patchSubFolder}",
                 "env": {
                     "CASSANDRA_HOST": "${input:cassandraHost}",
                     "TARGET_HOST": "${input:targetHost}",
@@ -694,6 +694,12 @@
             "type": "promptString",
             "description": "Patch folder name under cassandra/patches/",
             "default": "US99999"
+        },
+        {
+            "id": "patchSubFolder",
+            "type": "promptString",
+            "description": "Patch subfolder name under cassandra/patches/${input:patchId}/",
+            "default": "/dev"
         },
         {
             "id": "patchScript",
