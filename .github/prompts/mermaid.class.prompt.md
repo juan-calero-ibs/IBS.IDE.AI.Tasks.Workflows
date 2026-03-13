@@ -1,7 +1,6 @@
 ---
 name: mermaid.class
 description: Generate a Mermaid class diagram from a Java source file.
-applyTo: "**/*.java"
 ---
 
 # 🧭 Mermaid Class Diagram Generator — Java

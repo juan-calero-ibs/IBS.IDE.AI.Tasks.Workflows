@@ -1,7 +1,6 @@
 ---
 name: mermaid.user-journey
 description: Generate a Mermaid user journey diagram from a Java source file.
-applyTo: "**/*.java"
 ---
 
 # 🧭 Mermaid User Journey Generator — Java

@@ -1,7 +1,6 @@
 ---
 name: mermaid.sequence
 description: Generate a Mermaid sequence diagram from a Java source file.
-applyTo: "**/*.java"
 ---
 
 # 🧭 Mermaid Sequence Diagram Generator — Java
