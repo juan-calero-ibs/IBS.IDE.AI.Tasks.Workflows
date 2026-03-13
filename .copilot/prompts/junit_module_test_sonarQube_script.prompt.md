@@ -24,30 +24,99 @@ Follow these rules for correctness, maintainability, and reliable coverage track
 ---
 
 ## 🧩 Class Selection
-✅ Include concrete logic classes (`*Impl`, `*Service`, `*Component`, `*Dao`).
+Generate JUnit test cases that specifically target the files fetched using ../../.github/scripts/sonar/sonar_pr_uncovered_lines.sh, line numbers, and uncovered conditions listed below, so PR new-code coverage increases meaningfully.
 
-✅ For this commit xxxxxxxx, , identify exactly which files were changed and which line ranges were added or modified and use that information to prioritize test generation for affected classes in that particular line of code.
+### Instructions for each file:
+1. For each file below, analyze the uncovered lines and uncovered conditions.
+2. Propose the most likely execution paths, branches, null checks, conditionals, exception paths, and edge cases needed to cover those lines.
+3. Generate concrete JUnit test methods for each file.
+4. Reuse the project’s likely existing testing style and libraries:
+   - JUnit 4 or JUnit 5 depending on existing file style
+   - Mockito for mocks/spies/stubs
+   - AssertJ or standard assertions if appropriate
+5. Prefer extending existing test classes if a matching test file likely already exists.
+6. Do not change production code unless absolutely necessary for testability.
+7. If a line looks unreachable without a small safe refactor, clearly call that out separately.
+8. For each file, provide:
+   - Why the lines are currently uncovered
+   - The exact test scenarios needed
+   - The JUnit test code
+   - Any mock setup required
+   - Any assumptions made
+9. Focus on minimal, targeted tests that improve SonarQube coverage rather than broad refactoring.
+10. If multiple uncovered lines belong to the same branch, combine them into one efficient test where possible.
 
-Use the commit diffs as the source of truth.
+### Important:
+- Be precise about line coverage vs condition coverage.
+- If uncovered conditions exist, explicitly create tests for both true/false paths.
+- If a method depends on DAO/provider/service calls, mock them.
+- If a method returns HTTP responses, assert status codes and response bodies where relevant.
+- If a method uses static helpers like Key.isNull(...), account for those branches.
+- If existing test class names are obvious, use them. Otherwise suggest an appropriate test class name.
 
-### For each commit:
-1. List every changed file.
-2. For each file, extract the affected line numbers from the diff hunk headers.
-3. Separate:
-   - Added lines
-   - Modified lines
-4. Ignore deleted-only lines unless they are part of a modification.
-5. Use the NEW file line numbers from the diff (`+++` side / `@@ -old,+new @@` hunk headers).
-6. Return the result in a clean structured format.
+### File list:
+SonarQube PR new-code coverage details
+SONAR_URL   = https://sonar.dev.abvprp.com
+PROJECT_KEY = aboveproperty_aboveproperty.java_AZh-ETkgTq6qrDHSx3LQ
+PR_KEY      = 1419
 
+Files found: 24
 
-### Rules to determine line numbers:
-- Treat pure insertions as “Added”.
-- Treat changed existing code as “Modified”.
-- Combine consecutive lines into ranges when possible.
-- Be precise and do not guess lines that are not explicitly supported by the diff.
-- If a file appears in multiple hunks, merge the ranges for that file.
-- If line numbers cannot be determined from the provided diff, say “line numbers not available”.
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/data/dao/solr/AgreementSearchDAOSolrImpl.java
+New coverage: 83.3%
+New uncovered lines: 1
+New uncovered conditions: 0
+Line numbers: 276
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/data/dao/solr/CustomerSearchDAOSolrImpl.java
+New coverage: 60.5%
+New uncovered lines: 9
+New uncovered conditions: 8
+Line numbers: 157,504,628,661,662,663,664,665,666,845,867,871
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/webservices/tasks/CustomerSearchTask.java
+New coverage: 90.6%
+New uncovered lines: 0
+New uncovered conditions: 3
+Line numbers: 131,137,240
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/data/dao/solr/ReservationProductSearchDAOSolrImpl.java
+New coverage: 71.4%
+New uncovered lines: 2
+New uncovered conditions: 0
+Line numbers: 254,257
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/controllers/internal/ReservationSearchControllerInternalImpl.java
+New coverage: 0.0%
+New uncovered lines: 15
+New uncovered conditions: 6
+Line numbers: 89,90,104,105,106,109,110,111,113,116,119,121,122,124,127
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/data/dao/solr/ReservationSearchDAOSolrImpl.java
+New coverage: 42.9%
+New uncovered lines: 4
+New uncovered conditions: 0
+Line numbers: 289,312,333,406
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/guice/providers/SolrClientProvider.java
+New coverage: 91.7%
+New uncovered lines: 0
+New uncovered conditions: 1
+Line numbers: 78
+
+--------------------------------------------------------------------------------
+File: src/main/java/com/abvprp/webservices/tasks/WorkflowTaskContentSearchTask.java
+New coverage: 95.0%
+New uncovered lines: 0
+New uncovered conditions: 1
+Line numbers: 117
 
 ❌ Exclude only approved module-specific exclusions from current pom/profile configuration, for example:
 - JaCoCo exclude: `**/com/abvprp/data/dao/cassandra/*`
