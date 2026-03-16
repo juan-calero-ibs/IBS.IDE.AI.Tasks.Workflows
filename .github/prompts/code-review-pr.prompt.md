@@ -81,4 +81,13 @@ Set `approve: false` unless the user explicitly says the PR is ready to approve.
 
 ## Generate md file
 
-Save findings to `.github/reviews/code-review-pr-<PR-number>-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. Use the format and guidelines above.
+Save findings to `.github/reviews/code-review-pr-<PR-number>-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. At the top of the markdown file, include a `Review metadata` section with these fields in this order:
+
+- `Date: YYYY-MM-DD`
+- `branchName: <source branch name or n/a>`
+- `commitHash: <PR head commit hash or n/a>`
+- `stagedCommit: n/a`
+- `prKey: <PR number/key>`
+- `fileName: <reviewed changed file path(s) or n/a>`
+
+Use `n/a` for any field that does not apply or cannot be determined. After the metadata section, include the findings and any optional sections using the format and guidelines above.

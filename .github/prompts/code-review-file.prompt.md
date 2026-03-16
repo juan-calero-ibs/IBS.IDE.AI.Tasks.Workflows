@@ -66,4 +66,13 @@ After the findings, optionally add:
 
 ## Generate md file
 
-Save findings to `.github/reviews/code-review-file-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. Use the format and guidelines above.
+Save findings to `.github/reviews/code-review-file-<reviewed file name>-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. At the top of the markdown file, include a `Review metadata` section with these fields in this order:
+
+- `Date: YYYY-MM-DD`
+- `branchName: <branch or revision range used for the review, or n/a>`
+- `commitHash: <resolved commit hash for the reviewed state, or n/a>`
+- `stagedCommit: <staged diff / index reference summary or n/a>`
+- `prKey: <PR number/key or n/a>`
+- `fileName: <reviewed file path(s) or n/a>`
+
+Use `n/a` for any field that does not apply or cannot be determined. After the metadata section, include the findings and any optional sections using the format and guidelines above.
