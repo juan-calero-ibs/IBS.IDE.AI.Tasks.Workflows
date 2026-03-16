@@ -1,19 +1,22 @@
 ---
 name: code-review-staged
 description: Review staged files in the current git repository for bugs, regressions, risky logic, and missing tests with findings-first output.
-argument-hint: Optional review focus or intent, such as ticket context or behavior to scrutinize
+argument-hint: Optional review focus or intent, such as a JIRA ticket, expected behavior, or a risk area to scrutinize
 agent: agent
 ---
 
 # Code Review Staged
 
-Review only the staged changes in the current git repository using a strict code-review mindset.
+Review only the staged changes in the **git repository that owns the currently open file**.
+Determine the repository root by running `git rev-parse --show-toplevel` from the directory of the active file.
 
 If no files are staged, say so explicitly and stop.
 
-If a file has partially staged changes, review only the staged hunks and use the wider file context only when needed to assess impact.
+If the workspace spans multiple git roots and you cannot determine which repository the user intends, ask before proceeding.
 
-If the user provides extra context, such as a JIRA ticket, expected behavior, or a risk area, use that context to guide the review.
+If a file has partially staged changes, review only the staged hunks; use broader file context only when needed to assess impact.
+
+If the user provides extra context — a JIRA ticket, expected behavior, or a risk area — use it to focus the review.
 
 ## Review Goals
 
@@ -24,40 +27,35 @@ If the user provides extra context, such as a JIRA ticket, expected behavior, or
 
 ## Process
 
-1. Identify the current repository root and list staged files.
-2. Inspect the staged diff only.
-3. Read surrounding file context only where needed to validate behavior or impact.
-4. Cross-reference related callers, callees, or tests only when needed to confirm a finding.
-5. Produce findings ordered by severity.
-
-## Output Requirements
-
-- Present findings first.
-- For each finding, include severity, impact, and a concrete explanation.
-- Reference the affected file and line(s) when available from the staged diff or surrounding context.
-- Keep the summary brief and place it after the findings.
-- If no findings are discovered, say so explicitly and mention any residual risks or testing gaps.
+1. Run `git rev-parse --show-toplevel` from the active file's directory to confirm the repository root.
+2. Run `git diff --cached --name-only` to list staged files. Stop if there are none.
+3. Run `git diff --cached` to inspect the full staged diff.
+4. Read surrounding file context only where needed to validate behavior or impact.
+5. Cross-reference related callers, callees, or tests only when needed to confirm a finding.
+6. Produce findings ordered by severity.
 
 ## Finding Format
 
-Use this structure:
+Use this structure for each finding:
 
 1. `[severity]` Short title  
-   File: path/to/file (line N or lines N-M)  
+   File: `path/to/file` (line N or lines N–M)  
    Why it matters: concise risk explanation  
    Evidence: specific staged behavior, code path, or diff detail
 
-After the findings, optionally add:
+Severity scale:
+- `high` — likely bug, regression, security issue, data loss, or broken behavior
+- `medium` — important risk, fragile logic, missing validation, or notable test gap
+- `low` — smaller issue that is real but unlikely to break core behavior
 
-- Open questions or assumptions
-- Brief change summary
-- Residual risks or testing gaps
+## Output Structure
 
-## Severity Guide
+1. **Findings** — ordered by severity (high → low).
+2. *(optional)* **Open questions or assumptions**
+3. *(optional)* **Change summary** — one paragraph max
+4. *(optional)* **Residual risks / testing gaps**
 
-- `high`: likely bug, regression, security issue, data loss, or broken behavior
-- `medium`: important risk, fragile logic, missing validation, or notable test gap
-- `low`: smaller issue that is real but unlikely to break core behavior
+If no findings are discovered, say so explicitly and note any residual risks or testing gaps.
 
 ## Invocation Examples
 
@@ -65,15 +63,23 @@ After the findings, optionally add:
 - `/code-review-staged HOSAPS-8580 promo setting change`
 - `/code-review-staged focus on null-handling and backward compatibility`
 
-## Generate md file
+## Save Review to File
 
-Save findings to `.github/reviews/code-review-staged-<staged diff / index reference summary or na>-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. At the top of the markdown file, include a `Review metadata` section with these fields in this order:
+**Always ask the user before creating or overwriting a file.**
 
-- `Date: YYYY-MM-DD`
-- `branchName: <current branch or n/a>`
-- `commitHash: <HEAD commit hash or n/a>`
-- `stagedCommit: <staged diff / index reference summary or n/a>`
-- `prKey: <PR number/key or n/a>`
-- `fileName: <reviewed staged file path(s) or n/a>`
+Save to: `.github/reviews/code-review-staged-<slug>-<YYYY-MM-DD>.md`  
+Where `<slug>` is a short kebab-case summary of the staged change (e.g., `update-promo-flag`, `null-check-fix`) or `na` if not determinable.
 
-Use `n/a` for any field that does not apply or cannot be determined. After the metadata section, include the findings and any optional sections using the format and guidelines above.
+Include a **Review metadata** header at the top of the saved file:
+
+```
+## Review metadata
+
+Date: YYYY-MM-DD
+branchName: <branch or n/a>
+commitHash: <HEAD hash or n/a>
+stagedFiles: <reviewed file path(s) or n/a>
+prKey: <PR number or n/a>
+```
+
+Use `n/a` for any field that cannot be determined. Follow the header with findings and any optional sections in the format above.
