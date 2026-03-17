@@ -1,14 +1,10 @@
 ---
 name: code-review-pr
 description: Review a GitHub pull request by number for bugs, regressions, risky changes, and missing tests with findings-first output. Optionally posts the review as a PR comment.
-argument-hint: PR number and repository name (e.g. 42 aboveproperty.java), optionally post review as comment
+argument-hint: PR number (e.g. 42), optionally repository name (defaults to aboveproperty.java)
 agent: agent
 tools:
-  - mcp_gitkraken_pull_request_get_detail
-  - mcp_gitkraken_pull_request_get_comments
-  - mcp_gitkraken_pull_request_create_review
-  - mcp_gitkraken_git_log_or_diff
-  - mcp_gitkraken_repository_get_file_content
+  - gh
 ---
 
 # Code Review PR
@@ -17,10 +13,10 @@ Review the specified pull request using a strict code-review mindset.
 
 ## Setup
 
-1. Ask the user for the PR number and repository name if not provided.
-2. Fetch the PR details and changed file list using `mcp_gitkraken_pull_request_get_detail` with `pull_request_files: true`.
-3. Fetch existing comments with `mcp_gitkraken_pull_request_get_comments` to avoid repeating already-raised concerns.
-4. For each changed file, read the relevant file content or diff to assess the change in context.
+1. Ask the user for the PR number if not provided. If no repository is provided, default to `aboveproperty.java`.
+2. Fetch the PR diff using `gh pr diff <PR-number> --repo aboveproperty/<repo-name>`.
+3. Use `gh pr view <PR-number> --repo aboveproperty/<repo-name>` to get PR details, title, and description.
+4. Use `gh pr comment list <PR-number> --repo aboveproperty/<repo-name>` to check for existing comments.
 5. Assume `provider: github` and `repository_organization: aboveproperty` unless the user says otherwise.
 
 ## Review Goals
@@ -70,18 +66,18 @@ After all findings, add any of the following sections that apply:
 
 ## Posting the Review
 
-If the user confirms they want to post the review, use `mcp_gitkraken_pull_request_create_review` with the formatted findings as the `review` body.
-Set `approve: false` unless the user explicitly says the PR is ready to approve.
+If the user confirms they want to post the review, use `gh pr comment <PR-number> --body "<findings>"` to post the formatted findings as a PR comment.
+Approval workflows should be handled via PR reviews using `gh pr review <PR-number> --approve` if the user explicitly approves the PR.
 
 ## Invocation Examples
 
+- `/code-review-pr 42`
 - `/code-review-pr 42 aboveproperty.java`
-- `/code-review-pr 101 aboveproperty.java — post review as comment`
-- `/code-review-pr 17 aboveproperty.umt`
+- `/code-review-pr 101 aboveproperty.umt`
 
 ## Generate md file
 
-Save findings to `.github/reviews/code-review-pr-<PR-number>-<YYYY-MM-DD>.md`. Ask the user before creating or overwriting the file. At the top of the markdown file, include a `Review metadata` section with these fields in this order:
+Automatically save findings to `.github/reviews/code-review-pr-<PR-number>-<YYYY-MM-DD>.md`. Report that the file was saved with the full path. At the top of the markdown file, include a `Review metadata` section with these fields in this order:
 
 - `Date: YYYY-MM-DD`
 - `branchName: <source branch name or n/a>`
