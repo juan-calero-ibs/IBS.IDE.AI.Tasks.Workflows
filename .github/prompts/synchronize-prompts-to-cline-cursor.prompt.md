@@ -1,5 +1,5 @@
 ---
-name: copy-prompts-to-cline-cursor
+name: synchronize-prompts-to-cline-cursor
 description: Delete all files in the Cline workflows and Cursor commands directories, then copy every .prompt.md file from .github/prompts/ into both targets.
 agent: agent
 ---
