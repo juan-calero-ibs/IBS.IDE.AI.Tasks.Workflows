@@ -39,7 +39,7 @@ Review the specified pull request using a strict code-review mindset.
 
 - Present findings first, ordered by severity.
 - For each finding, include severity, impact, and a concrete explanation.
-- Reference the affected file and line(s) where available.
+- Reference the affected file, line number(s), and the exact line(s) of code where available.
 - After findings, include: open questions, a brief PR summary, and residual risk or test gap notes.
 - If no findings exist, say so explicitly and note any residual risks.
 
@@ -49,6 +49,7 @@ Use this structure:
 
 1. `[severity]` Short title  
    File: `path/to/file` (line N or lines N–M)  
+   Code: `<exact line or snippet from that location>`  
    Why it matters: concise risk explanation  
    Evidence: specific method, expression, or condition
 

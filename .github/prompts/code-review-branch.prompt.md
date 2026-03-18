@@ -31,7 +31,7 @@ If the user provides a revision range such as `develop..feature` or `origin/deve
 
 - Present findings first.
 - For each finding, include severity, impact, and a concrete explanation.
-- Reference the affected files and lines when available.
+- Reference the affected files, line numbers, and the exact line(s) of code when available.
 - Keep the summary brief and place it after the findings.
 - If no findings are discovered, say so explicitly and mention any residual risks or testing gaps.
 
@@ -40,7 +40,8 @@ If the user provides a revision range such as `develop..feature` or `origin/deve
 Use this structure:
 
 1. `[severity]` Short title  
-   File: [path/to/file](./path/to/file)  
+   File: [path/to/file](./path/to/file) — line N (or lines N–M)  
+   Code: `<exact line or snippet from that location>`  
    Why it matters: concise risk explanation  
    Evidence: specific behavior, code path, or diff detail
 

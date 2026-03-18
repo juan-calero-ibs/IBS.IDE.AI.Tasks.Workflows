@@ -40,6 +40,7 @@ Use this structure for each finding:
 
 1. `[severity]` Short title  
    File: `path/to/file` (line N or lines N–M)  
+   Code: `<exact line or snippet from that location>`  
    Why it matters: concise risk explanation  
    Evidence: specific staged behavior, code path, or diff detail
 

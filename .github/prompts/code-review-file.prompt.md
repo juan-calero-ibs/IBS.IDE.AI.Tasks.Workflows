@@ -33,7 +33,7 @@ If the user also provides a branch or revision range, review **only the changed 
 
 - Present findings first.
 - For each finding, include severity, impact, and a concrete explanation.
-- Reference the affected file and line(s) when available.
+- Reference the affected file, line number(s), and the exact line(s) of code when available.
 - Keep a brief change/purpose summary after the findings.
 - If no findings are discovered, say so explicitly and note any residual risks or test gaps.
 
@@ -43,6 +43,7 @@ Use this structure:
 
 1. `[severity]` Short title  
    File: [path/to/file](./path/to/file) (line N or lines N–M)  
+   Code: `<exact line or snippet from that location>`  
    Why it matters: concise risk explanation  
    Evidence: specific method, expression, or logic detail
 
