@@ -1,6 +1,6 @@
 ---
 agent: agent
-name: junit_generate_commit
+name: junit-generate-from-commit
 description: Generate JUnit 4 test cases for modified Java classes for a given commit or branch in the module com.abvprp.core:aboveproperty-java, prioritizing classes with recent changes.
 
 ---

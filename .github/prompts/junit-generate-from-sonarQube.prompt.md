@@ -1,6 +1,6 @@
 ---
 agent: agent
-name: junit_generate_from_sonarQube
+name: junit-generate-from-sonarQube
 description: Generate JUnit 4 test cases for all Java classes in the module com.abvprp.core:aboveproperty-java, from a list of uncovered lines and conditions provided by SonarQube.
 ---
 
