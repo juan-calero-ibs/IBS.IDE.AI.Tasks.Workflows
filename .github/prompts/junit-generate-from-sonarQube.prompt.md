@@ -77,6 +77,91 @@ Generate JUnit test cases that specifically target the files, line numbers, and 
 
 ---
 
+## 📝 Inline PR Review Comments (GitHub-style threads)
+
+After running `sonar_pr_uncovered_lines.sh` and analyzing uncovered lines/conditions, post **inline review comments** directly on the specific file lines in the PR diff — not a single top-level PR comment. This creates threaded annotations that appear inline in the code review.
+
+### When to post inline comments
+1. **Before writing tests**: annotate each SonarQube-reported uncovered line with the test scenario needed.
+2. **After tests pass**: optionally reply to each thread confirming the line is now covered.
+
+### Setup: get the PR head commit SHA
+```bash
+COMMIT_SHA=$(gh pr view ${PR_KEY} --repo aboveproperty/aboveproperty.java --json headRefOid -q '.headRefOid')
+```
+
+### Post inline review comments via GitHub API
+
+Each uncovered line maps to one inline comment. Build a JSON payload and post it as a single pull request review:
+
+```bash
+# Build comments JSON — one entry per uncovered line
+COMMENTS_JSON=$(cat <<'ENDJSON'
+[
+  {
+    "path": "src/main/java/com/abvprp/path/to/File.java",
+    "line": 42,
+    "side": "RIGHT",
+    "body": "⚠️ **Uncovered (SonarQube):** add test for `null` branch — `if (x == null)` at line 42 is not exercised."
+  },
+  {
+    "path": "src/main/java/com/abvprp/path/to/OtherFile.java",
+    "line": 87,
+    "side": "RIGHT",
+    "body": "⚠️ **Uncovered (SonarQube):** add test for exception path — `catch (DataAccessException e)` block never reached."
+  }
+]
+ENDJSON
+)
+
+# Post as a single pull request review with inline threads
+PAYLOAD=$(jq -n \
+  --arg commit_id "$COMMIT_SHA" \
+  --argjson comments "$COMMENTS_JSON" \
+  '{commit_id: $commit_id, event: "COMMENT", body: "⚠️ SonarQube uncovered lines — inline test coverage notes", comments: $comments}')
+
+echo "$PAYLOAD" | gh api \
+  repos/aboveproperty/aboveproperty.java/pulls/${PR_KEY}/reviews \
+  -X POST \
+  --input -
+```
+
+### Comment body format
+
+Each inline comment body should follow this pattern:
+```
+⚠️ **Uncovered (SonarQube):** <short description of the branch/condition that is not covered>
+
+**Test scenario needed:** <what the JUnit test must exercise to cover this line>
+```
+
+### Rules for inline comments
+- `path` must be relative to the repository root (e.g. `src/main/java/com/abvprp/...`).
+- `line` is the **PR head** (right side) line number as reported by SonarQube — must fall within the PR diff; if a line is outside the diff context, omit that comment to avoid API errors.
+- `side` is always `"RIGHT"` for new/unchanged lines in the PR head; use `"LEFT"` only for deleted lines.
+- Group all comments into **one** `POST /reviews` call to avoid spamming the PR with separate review submissions.
+- If `gh` is not authenticated or `jq` is unavailable, fall back to `curl`:
+
+```bash
+curl -s -X POST \
+  -H "Authorization: token ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github.v3+json" \
+  -H "Content-Type: application/json" \
+  https://api.github.com/repos/aboveproperty/aboveproperty.java/pulls/${PR_KEY}/reviews \
+  -d "$PAYLOAD"
+```
+
+### Required environment variables (add to session)
+| Variable | Description |
+|---|---|
+| `GITHUB_TOKEN` | GitHub PAT with `repo` scope (or use `gh auth token`) |
+| `PR_KEY` | Pull request number (same as used for SonarQube script) |
+| `COMMIT_SHA` | PR head commit SHA (obtained via `gh pr view` above) |
+
+> **Note:** `gh pr comment` posts an **issue-level** comment, NOT an inline thread. Always use the `/reviews` endpoint for line-anchored inline comments.
+
+---
+
 ## 🧱 Tooling Baseline (current module)
 - Java: **1.8** (`project.java.target`)
 - Maven: project-managed
