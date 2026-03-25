@@ -36,6 +36,8 @@ Determine the current JaCoCo coverage status for staged Java production-code fil
 - No `mockStatic`
 - Preferred coverage flow: clean -> compile/test-compile -> clean test with sonar profile -> `jacoco:report`
 
+When interpreting **test gaps** or suggesting follow-up test work for **`aboveproperty.java`**, align expectations with **`UNIT_TEST_GUIDELINES.md`** at the repo root (stack, base classes, forbidden patterns, Sonar smells, mock limitations). If the user asks for test changes next, follow that document.
+
 ## Workflow
 
 1. Identify the repository root and list staged files.

@@ -12,6 +12,14 @@ Follow these rules for correctness, maintainability, and reliable coverage track
 
 ---
 
+## 📘 AboveProperty.java unit test guidelines (mandatory)
+
+**Read and apply `UNIT_TEST_GUIDELINES.md`** at the root of the **`aboveproperty.java`** repository (e.g. `aboveproperty.java/UNIT_TEST_GUIDELINES.md`, or `aboveproperty/aboveproperty.java/UNIT_TEST_GUIDELINES.md` in a typical multi-repo layout). It overrides generic advice here when they differ.
+
+Summary: Java 8, JUnit 4.12, Mockito 1.10.19 with **`mock()` / `when()` / `verify()`** (not `@Mock` / `@InjectMocks` + `MockitoJUnitRunner`), Hamcrest + JUnit `Assert`, correct base classes (`BaseTestCaseMock`, `AbstractControllerTest`, `AbstractOTATest`), forbidden APIs (`new Key()`, wrong factory methods, etc.), Sonar-friendly parameterized tests and assertions, naming `test<MethodName>_<scenario>`, Tier 2 setup patterns in §13.
+
+---
+
 ## 🎯 Core Principles
 1. Work one class at a time.
 2. Always clean before test/coverage runs.
@@ -102,14 +110,15 @@ mvn clean test -Psonar jacoco:report
 ---
 
 ## 🧠 Test Authoring Rules (JUnit 4 + Mockito 1.x)
-1. Generate syntactically correct tests on first attempt.
+1. Generate syntactically correct tests on first attempt; verify APIs against source per **`UNIT_TEST_GUIDELINES.md`** §4.
 2. Use JUnit 4 style (`@Test`, `@Before`, `@RunWith` as needed).
-3. Use `@Mock` / `@InjectMocks` and `when(...).thenReturn(...)` patterns compatible with Mockito 1.x.
+3. Prefer **`mock()`, `when()`, `verify()`** and project base classes per **`UNIT_TEST_GUIDELINES.md`** §3–§5 and §13.
 4. Provide valid mock data (lists with enough elements where indexing occurs).
 5. Avoid unnecessary stubbing.
 6. Match stub return types to actual method signatures.
-7. Use meaningful assertions and verifications.
+7. Use Hamcrest / JUnit assertions; use **`assertEquals(0, x.compareTo(y))`** for compareTo-style checks (Sonar).
 8. Ensure all public methods are covered.
+9. Declare **`throws Exception`** where checked exceptions apply.
 
 ### Static methods note
 Mockito 1.10.19 does **not** support `mockStatic`.
@@ -117,29 +126,20 @@ Prefer refactoring static dependencies behind injectable collaborators.
 
 ---
 
-## 🧩 JUnit 4 Example Template
+## 🧩 JUnit 4 Example Template (see UNIT_TEST_GUIDELINES.md for controller / Tier 2 patterns)
 ```java
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
 
-@RunWith(MockitoJUnitRunner.class)
 public class MyServiceTest {
 
-  @Mock
-  private Dependency dep;
-
-  @InjectMocks
-  private MyService service;
-
   @Test
-  public void testHappyPath() {
+  public void testExecute_happyPath() {
+    Dependency dep = mock(Dependency.class);
     when(dep.getData()).thenReturn("val");
+    MyService service = new MyService(dep);
 
     String result = service.execute();
 

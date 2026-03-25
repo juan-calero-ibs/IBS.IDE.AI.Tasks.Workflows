@@ -25,6 +25,8 @@ If the user provides extra context — a JIRA ticket, expected behavior, or a ri
 - Ignore purely stylistic nits unless they hide a real engineering risk.
 - Do not review unstaged or untracked changes.
 
+For staged files in **`aboveproperty.java`** that are tests or test-only changes, cross-check **`UNIT_TEST_GUIDELINES.md`** at the repo root (Mockito style, base classes, forbidden patterns, Sonar-friendly assertions).
+
 ## Process
 
 1. Run `git rev-parse --show-toplevel` from the active file's directory to confirm the repository root.

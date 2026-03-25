@@ -11,6 +11,26 @@ Follow these rules for correctness, maintainability, and reliable coverage track
 
 ---
 
+## 📘 AboveProperty.java unit test guidelines (mandatory)
+
+Before writing or changing tests, **read and apply** the project reference:
+
+**`UNIT_TEST_GUIDELINES.md`** at the root of the **`aboveproperty.java`** repository  
+(e.g. `aboveproperty.java/UNIT_TEST_GUIDELINES.md` next to `pom.xml`; full example: `aboveproperty/aboveproperty.java/UNIT_TEST_GUIDELINES.md` when cloned beside sibling repos).
+
+That document is authoritative for:
+
+- **Stack**: Java 8, JUnit 4.12, Mockito 1.10.19, Hamcrest 1.3 + JUnit `Assert` (not Jupiter; do not assume AssertJ).
+- **Mockito style**: use `mock()`, `when()`, `verify()` — **do not** use `@Mock` / `@InjectMocks` with `MockitoJUnitRunner` in this project (see guidelines §3–§5).
+- **Test bases**: when to extend `BaseTestCaseMock` vs `AbstractControllerTest` / `AbstractOTATest` vs standalone tests; pre-loaded keys and `TEST-DATA/*.json`.
+- **Forbidden patterns** that break compilation or CI: e.g. `new Key()`, non-existent APIs, wrong signatures, missing `throws Exception`, wrong `AbovePropertyObjectMapperFactory` usage, mock limitations (`createPrice()`, `priceId_Standard` + GURNIL, etc.).
+- **Sonar-friendly patterns**: `@Parameterized` for 3+ similar cases, `assertEquals(0, x.compareTo(y))` instead of `assertTrue(x.compareTo(y) == 0)`, test naming `test<MethodName>_<scenario>`, pre-push checklist.
+- **Tier 2** controller/workflow tests: setup in `@Before`, `getInjector().injectMembers(this)`, factories on `AbstractControllerTest`, inventory/calendar before availability/pricing assertions.
+
+If anything in this prompt conflicts with **`UNIT_TEST_GUIDELINES.md`**, follow the markdown file.
+
+---
+
 ## 🎯 Core Principles
 1. The primary objective is **PR new-code coverage > 90%** for the SonarQube report, not generic test generation.
 2. Work one Sonar-reported class at a time, in priority order based on uncovered new-code impact.
@@ -42,10 +62,9 @@ Generate JUnit test cases that specifically target the files, line numbers, and 
 1. For each file, analyze the uncovered lines and uncovered conditions.
 2. Map each uncovered line or condition to the exact execution path, branch, null check, conditional, exception path, or edge case needed to execute it.
 3. Generate concrete JUnit test methods for each file.
-4. Reuse the project’s likely existing testing style and libraries:
-   - JUnit 4
-   - Mockito for mocks/spies/stubs
-   - AssertJ or standard assertions if appropriate
+4. Reuse the project’s testing style and libraries per **`UNIT_TEST_GUIDELINES.md`**:
+   - JUnit 4, Hamcrest + JUnit `Assert`
+   - Mockito 1.x with `mock()` / `when()` / `verify()` (not annotation-driven runner mocks unless an existing test class already uses that pattern consistently)
 5. Prefer extending existing test classes if a matching test file likely already exists.
 6. Do not change production code unless absolutely necessary for testability.
 7. If a line looks unreachable without a small safe refactor, clearly call that out separately.
@@ -207,15 +226,16 @@ mvn clean test -Psonar jacoco:report
 ---
 
 ## 🧠 Test Authoring Rules (JUnit 4 + Mockito 1.x)
-1. Generate syntactically correct tests on first attempt.
-2. Use JUnit 4 style (`@Test`, `@Before`, `@RunWith` as needed).
-3. Use `@Mock` / `@InjectMocks` and `when(...).thenReturn(...)` patterns compatible with Mockito 1.x.
+1. Generate syntactically correct tests on first attempt; **verify every called API against source** (see forbidden / hallucination patterns in **`UNIT_TEST_GUIDELINES.md`** §4).
+2. Use JUnit 4 style (`@Test`, `@Before`, `@RunWith` as needed — e.g. `Parameterized`, `Enclosed`).
+3. Prefer **`mock()`, `when()`, `verify()`** per project guidelines; extend **`BaseTestCaseMock`** (or `AbstractControllerTest` / `AbstractOTATest` when building domain from scratch) instead of inventing parallel Guice/DAO setup.
 4. Provide valid mock data (lists with enough elements where indexing occurs).
 5. Avoid unnecessary stubbing.
 6. Match stub return types to actual method signatures.
-7. Use meaningful assertions and verifications.
+7. Use Hamcrest / JUnit assertions meaningfully; prefer **`assertEquals(0, x.compareTo(y))`** over `assertTrue(x.compareTo(y) == 0)` for Sonar.
 8. Ensure the specific changed methods and changed branches reported by SonarQube are covered first.
 9. If overall public-method coverage and Sonar new-code coverage conflict in priority, optimize for Sonar new-code coverage first.
+10. Declare **`throws Exception`** on tests and helpers that invoke methods throwing checked exceptions.
 
 ### Static methods note
 Mockito 1.10.19 does **not** support `mockStatic`.
@@ -223,29 +243,22 @@ Prefer refactoring static dependencies behind injectable collaborators.
 
 ---
 
-## 🧩 JUnit 4 Example Template
+## 🧩 JUnit 4 Example Templates (align with UNIT_TEST_GUIDELINES.md)
+
+**Manual mocks (preferred for simple collaborators):**
 ```java
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
 
-@RunWith(MockitoJUnitRunner.class)
 public class MyServiceTest {
 
-  @Mock
-  private Dependency dep;
-
-  @InjectMocks
-  private MyService service;
-
   @Test
-  public void testHappyPath() {
+  public void testExecute_happyPath() {
+    Dependency dep = mock(Dependency.class);
     when(dep.getData()).thenReturn("val");
+    MyService service = new MyService(dep);
 
     String result = service.execute();
 
@@ -254,6 +267,10 @@ public class MyServiceTest {
   }
 }
 ```
+
+**Controller / Guice + preloaded data:** extend `BaseTestCaseMock` and follow **`UNIT_TEST_GUIDELINES.md`** §5 (known-working GURNIL + `priceId_Price_Product_Assembly` + `productId_Room_One`, etc.).
+
+**Tier 2 domain setup:** extend `AbstractControllerTest` and use the `@Before` + factory pattern in **`UNIT_TEST_GUIDELINES.md`** §13.
 
 ---
 

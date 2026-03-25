@@ -20,6 +20,8 @@ If the user also provides a branch or revision range, review **only the changed 
 - Flag significant test coverage gaps for the logic present in the file.
 - Ignore purely stylistic nits unless they obscure correctness or create a real risk.
 
+If the file is a **JUnit test** under **`aboveproperty.java`** (`src/test/java/...`), evaluate it against **`UNIT_TEST_GUIDELINES.md`** at that repository root (patterns, forbidden APIs, base-class usage, Sonar smells, mock limits).
+
 ## Process
 
 1. Read the full file (or the changed sections plus surrounding context if a diff range is given).

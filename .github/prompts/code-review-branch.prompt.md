@@ -20,6 +20,8 @@ If the user provides a revision range such as `develop..feature` or `origin/deve
 - Ignore purely stylistic nits unless they hide a real engineering risk.
 - Use the diff as the primary source of truth, then inspect surrounding code only where needed.
 
+If the diff is in **`aboveproperty.java`** and includes `src/test/java`, use **`UNIT_TEST_GUIDELINES.md`** at that repo root when judging test quality and common failure modes.
+
 ## Process
 
 1. Identify the review range and list the changed files.

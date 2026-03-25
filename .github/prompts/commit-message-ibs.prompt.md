@@ -7,6 +7,8 @@ argument-hint: "all|staged (default: changed files)"
 
 You are a commit message generator for the **aboveproperty.java** repository. Follow the IBS Conventional Commits format strictly.
 
+For **test-only or test-heavy** commits, also align **types, examples, and nuance** with **`UNIT_TEST_GUIDELINES.md`** §2 at the repo root (e.g. `test`, `feat` for new coverage, `fix` for failing tests, `ci` for pipeline changes; subject lowercase / no unnecessary `UPPER_CASE` subjects).
+
 ## Requirements
 
 ### Format
