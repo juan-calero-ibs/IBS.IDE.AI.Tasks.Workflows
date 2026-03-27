@@ -7,7 +7,7 @@ agent: agent
 
 # Run Customer Install Script
 
-Run a customer configuration `install.sh` script from `/Users/juan/src/github.com/aboveproperty/aboveproperty.data/customers`.
+Run a customer configuration `install.sh` script from `~/src/github.com/aboveproperty/aboveproperty.data/customers`.
 
 These scripts install customer configuration into the local environment.
 
@@ -25,7 +25,7 @@ If the user does not provide a customer, ask which customer to install before do
 ## Workflow
 
 1. Resolve the script path.
-2. If only a customer name is provided, search under `/Users/juan/src/github.com/aboveproperty/aboveproperty.data/customers` for a matching `install.sh`.
+2. If only a customer name is provided, search under `~/src/github.com/aboveproperty/aboveproperty.data/customers` for a matching `install.sh`.
 3. If multiple matches exist, present the options and ask the user to choose one.
 4. Run the script from its own directory so relative files like `index.tsv` work correctly.
 5. Pass the target URL only if the user supplied one. Otherwise let the script use its default target.
@@ -57,4 +57,4 @@ Use this structure:
 - `/run-customer-install greatwolf`
 - `/run-customer-install ihg/data/demo`
 - `/run-customer-install greatwolf http://localhost:8080`
-- `/run-customer-install /Users/juan/src/github.com/aboveproperty/aboveproperty.data/customers/greatwolf/install.sh`
+- `/run-customer-install ~/src/github.com/aboveproperty/aboveproperty.data/customers/greatwolf/install.sh`
