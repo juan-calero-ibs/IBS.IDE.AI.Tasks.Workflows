@@ -11,9 +11,40 @@ Follow these rules for correctness, maintainability, and reliable coverage track
 
 ---
 
+## 🎯 One-shot mandate (this user message only — reach ≥ 90% “Coverage on New Code”)
+
+The Quality Gate measures **Coverage on New Code** only (not overall project coverage). A PR can sit at **~74%** with many tests already added if large new/changed regions remain red. **One invocation = one task:** you must keep working inside that task until the gate is green or you document an impossible blocker.
+
+### Do this in order before writing the first test
+
+1. **Authenticate Sonar** — `export SONAR_TOKEN=…` from the environment (never ask the user to paste secrets into chat). If  
+   `curl -s -o /dev/null -w '%{http_code}' -u "${SONAR_TOKEN}:" "${SONAR_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}&pullRequest=${PR_KEY}"`  
+   returns **401**, fix token/VPN first; **in parallel** still run `git diff <target-branch>...HEAD` on `aboveproperty.java` so the session is not wasted.
+2. **Open the Sonar “Coverage on New Code” file list** for the PR (same data as the measures UI), e.g.  
+   `…/component_measures?id=<PROJECT_KEY>&pullRequest=<PR_KEY>&metric=new_coverage&view=list`  
+   Sort by **uncovered lines** / lowest file coverage. Treat every file in that list with material new code as **in scope**.
+3. **Run** `scripts/sonar/sonar_pr_uncovered_lines.sh` once at the start (same `SONAR_URL`, `SONAR_TOKEN`, `PROJECT_KEY`, `PR_KEY`) to get **per-file** `new_uncovered_lines` / `new_uncovered_conditions` for **prioritization**. Counts are not enough to stop — they tell you **where the missing ~16+ points** (90 − 74) almost certainly live.
+4. **Merge lists**: every file appearing in **either** the Sonar measures list **or** the script **or** `git diff --name-only` for `src/main/java` must appear on your working checklist. **No file gets dropped** because “it looked small.”
+5. **Poll the gate before declaring done** (when token works):  
+   `GET ${SONAR_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}&pullRequest=${PR_KEY}`  
+   Do not claim success until `projectStatus.status` is **OK** *or* the user has confirmed a fresh analysis after your push and you re-polled.
+
+### Gap-closure priority (how to climb from ~74% to ≥90% in one session)
+
+- Sort candidates by **`new_uncovered_lines` descending**, then by **`new_uncovered_conditions` descending**.
+- After each batch of tests, run **`mvn clean test -Psonar jacoco:report`** (full module, no `-Dtest=`) and re-open JaCoCo for **every** PR-touched file still in the Sonar list; **red** lines and **yellow** branches must shrink toward zero.
+- **Builder / enqueue one-liners:** if production code only adds chained calls on an object passed to a mock, `verify(collaborator).foo(any())` often **does not** execute those lines. Use **`ArgumentCaptor`** on the real type (`QueueTask`, request DTO, etc.), `verify(...).foo(captor.capture())`, then **`assertEquals` / Hamcrest** on fields (`getAltBaseUriConfigKey()`, `getScope()`, URL fields, delay, etc.).
+- **Condition coverage:** for every `if` / `switch` / `catch` Sonar marks partial, add the **complementary** test (false branch, other `case`, exception type) in the **same** session — partial class fixes rarely move **new-code** % enough alone.
+
+### Optional work — **defer** in one-shot mode if Sonar/JaCoCo gaps remain
+
+- Inline GitHub PR review comments (`POST …/pulls/{id}/reviews`) — **only after** Coverage on New Code ≥ 90% (or no time left). They do not increase coverage.
+
+---
+
 ## 🔒 Single-execution completion gate (non-negotiable)
 
-**Quality Gate failure mode:** A prior run reached **~87%** “Coverage on New Code” while stopping after “reasonable” tests. **Do not treat that as success.** In **one** invocation of this prompt you must drive the PR to **≥ 90%** Sonar “Coverage on New Code” (or an explicit, documented exclusion).
+**Quality Gate failure mode:** Runs have stopped at **~74–87%** “Coverage on New Code” while tests “looked sufficient.” **Do not treat that as success.** In **one** invocation of this prompt you must drive the PR to **≥ 90%** Sonar “Coverage on New Code” (or an explicit, documented exclusion).
 
 ### You are NOT done until ALL of the following are true in the same session
 
@@ -92,15 +123,17 @@ Generate JUnit test cases that specifically target the files, line numbers, and 
 
 ### Limitation of `sonar_pr_uncovered_lines.sh` (critical)
 
-The script at `scripts/sonar/sonar_pr_uncovered_lines.sh` outputs **per-file counts** (`new_uncovered_lines`, `new_uncovered_conditions`) — **not** individual line numbers. **Counts alone are insufficient** to know when to stop; they caused premature stopping with **~87%** gate coverage.
+The script at `scripts/sonar/sonar_pr_uncovered_lines.sh` outputs **per-file counts** (`new_uncovered_lines`, `new_uncovered_conditions`) — **not** individual line numbers. **Counts alone are insufficient** to know when to stop; they caused premature stopping with **~74–87%** gate coverage while many files still had non-zero counts.
 
 You must also obtain **line- or branch-level** targets using one or more of:
 
-1. **SonarQube PR UI**: open the PR in Sonar → Coverage on New Code → expand each file → note **uncovered line ranges / branches** until the list is empty or excluded.
-2. **Sonar Web API** (same auth as the script): try, as supported by the server version, endpoints such as:
+1. **Sonar “Coverage on New Code” file list** (mandatory for one-shot): same view as  
+   `/component_measures?id=${PROJECT_KEY}&pullRequest=${PR_KEY}&metric=new_coverage&view=list` — sort by worst file coverage / most uncovered; click into each file for line detail.
+2. **SonarQube PR UI**: Coverage on New Code → expand each file → note **uncovered line ranges / branches** until the list is empty or excluded.
+3. **Sonar Web API** (same auth as the script): try, as supported by the server version, endpoints such as:
    - `GET ${SONAR_URL}/api/sources/lines?key=<component_key>&pullRequest=${PR_KEY}` (line hits when available), or  
    - drill `api/measures/component_tree` with `metricKeys=new_uncovered_lines,new_uncovered_conditions` and then open each component in the UI.
-3. **Local JaCoCo** (after **full** `mvn clean test -Psonar jacoco:report`): use `target/site/jacoco/*.html` (and optionally `jacoco.xml`) to find **red** lines and **partial** branches in each PR-touched file.
+4. **Local JaCoCo** (after **full** `mvn clean test -Psonar jacoco:report`): use `target/site/jacoco/*.html` (and optionally `jacoco.xml`) to find **red** lines and **partial** branches in each PR-touched file.
 
 Build an explicit **checklist** (file → line ranges or method names → test method mapping). Check items off as you add tests. **Do not skip files** that still have `new_uncovered_lines > 0` in the script output.
 
@@ -139,6 +172,7 @@ Environment:
 12. After writing tests for a file, verify whether the Sonar-reported uncovered lines for that file are now covered before moving on.
 
 ### Important:
+- **Captor over `any()` for new builder/chained fields:** when PR code builds a `QueueTask` (or similar) and passes it to `queueController.queueTask(...)`, `verify(queueController).queueTask(any())` often **does not** cover new chained setters. Capture the argument and assert **each** new field the PR introduced.
 - Be precise about line coverage vs condition coverage.
 - If uncovered conditions exist, explicitly create tests for both true/false paths.
 - Treat SonarQube uncovered new lines as the source of truth. Do not assume a class is "done" just because overall class coverage looks high.
@@ -157,7 +191,9 @@ Environment:
 
 ## 📝 Inline PR Review Comments (GitHub-style threads)
 
-After running `sonar_pr_uncovered_lines.sh` and analyzing uncovered lines/conditions, post **inline review comments** directly on the specific file lines in the PR diff — not a single top-level PR comment. This creates threaded annotations that appear inline in the code review.
+**One-shot / gate-first mode:** skip this entire section until **Coverage on New Code ≥ 90%** (or you have definitively blocked). Inline comments do not improve JaCoCo/Sonar metrics.
+
+After running `sonar_pr_uncovered_lines.sh` and analyzing uncovered lines/conditions, you *may* post **inline review comments** directly on the specific file lines in the PR diff — not a single top-level PR comment. This creates threaded annotations that appear inline in the code review.
 
 ### When to post inline comments
 1. **Before writing tests**: annotate each SonarQube-reported uncovered line with the test scenario needed.
@@ -369,6 +405,7 @@ Interpret `projectStatus.status` / conditions (e.g. new_coverage) before claimin
 ---
 
 ## 💡 Golden Rules
+- **One user message = one task:** keep iterating (tests → full `mvn clean test -Psonar jacoco:report` → Sonar/JaCoCo review) until **Coverage on New Code ≥ 90%** or a documented blocker — not “good enough” at ~74–87%.
 - Clean → test success → clean → **full-module** coverage (`jacoco:report` without `-Dtest=`)
 - Do not proceed to the next class before the current class’s Sonar-reported new-code gaps are addressed **and** JaCoCo shows no obvious remaining red in that file
 - Do not end the session until **all** Sonar-listed files are processed (or explicitly excluded)
@@ -384,13 +421,13 @@ After completing test generation for all targeted files:
 
 1. **Generate a short session summary** covering:
    - PR number and SonarQube project key used.
+   - **Sonar Quality Gate**: paste or summarize `api/qualitygates/project_status` for the PR (`status`, and the **`new_coverage`** / “Coverage on New Code” condition if present) — **required** when Sonar was reachable; if unreachable, state that and point to JaCoCo buffer results instead.
    - List of files processed with uncovered lines/conditions addressed.
    - Test classes created or modified.
    - Coverage improvement per class (before → after), with emphasis on new-code coverage impact.
    - Any production code changes made for testability.
    - Any lines flagged as unreachable or excluded.
    - Remaining gaps preventing PR new-code coverage from exceeding 90%, if any.
-   - **Quality Gate**: Sonar “Coverage on New Code” % and whether `api/qualitygates/project_status` was **OK** (or “not re-checked — JaCoCo buffer only”).
 
 2. **Save the summary as a Markdown file** at:
    ```
