@@ -36,6 +36,13 @@ The Quality Gate measures **Coverage on New Code** only (not overall project cov
 - **Builder / enqueue one-liners:** if production code only adds chained calls on an object passed to a mock, `verify(collaborator).foo(any())` often **does not** execute those lines. Use **`ArgumentCaptor`** on the real type (`QueueTask`, request DTO, etc.), `verify(...).foo(captor.capture())`, then **`assertEquals` / Hamcrest** on fields (`getAltBaseUriConfigKey()`, `getScope()`, URL fields, delay, etc.).
 - **Condition coverage:** for every `if` / `switch` / `catch` Sonar marks partial, add the **complementary** test (false branch, other `case`, exception type) in the **same** session — partial class fixes rarely move **new-code** % enough alone.
 
+### All-or-nothing when one file dominates the gate (typical 88–89% → stuck below 90%)
+
+Sonar’s **Coverage on New Code** is a **ratio over all new lines/conditions in the PR**. If **one** `src/main/java` file still shows **non-zero** `new_uncovered_lines` or `new_uncovered_conditions`, the gate can remain **under 90%** even when “most” tests exist. **Do not stop** at ~88.9% or “only 4 lines left.”
+
+- **Stop rule:** For every file Sonar lists with uncovered new code, **JaCoCo HTML** (`target/site/jacoco/.../<Class>.html`) must show **no red lines** in the **new/changed** region of that class after the **full** module run, **or** each remaining red line is listed under approved exclusions.
+- **Small numerators:** If Sonar shows **N uncovered lines** and **M uncovered conditions** on a single class (e.g. `N=4`, `M=6`), treat this as a **closed checklist**: implement **at least one test per distinct catch block** and **one scenario that exercises every nested `if` whose body is still red** — partial fixes to “most” branches often move **0.5–1.5%** total, which is exactly how PRs stall at **88–89%**.
+
 ### Optional work — **defer** in one-shot mode if Sonar/JaCoCo gaps remain
 
 - Inline GitHub PR review comments (`POST …/pulls/{id}/reviews`) — **only after** Coverage on New Code ≥ 90% (or no time left). They do not increase coverage.
@@ -79,6 +86,57 @@ Then:
 ### If the full module test run fails
 
 You still **cannot** treat scoped `-Dtest=` green builds as proof of the gate. Fix or isolate the failing legacy tests, skip only if the project’s documented exclusions apply, or document the **exact** failing test classes and stack traces in the session summary and state that **90% could not be verified** in this run. Do not claim the Quality Gate passed without a successful full-module `mvn clean test -Psonar` (or CI parity).
+
+---
+
+## 🔬 Condition coverage drill-down (mandatory when Sonar shows uncovered *conditions* or gate is 88–91%)
+
+Generic “add a test for the branch” is **not** enough when Sonar reports **uncovered conditions** (often **6+** on one method). The agent must **decompose** logic **before** writing tests.
+
+### 1) Compound `if (A && B && C)` inside a loop
+
+- **Line coverage** of the inner block requires **one** execution where **A ∧ B ∧ C** is true (e.g. `type != null && type.isAffectsInventory() && !TYPE_GENERAL.equals(...)`).
+- **Condition coverage** may require **additional** tests where **only one** of A, B, C is false, if JaCoCo/Sonar still shows yellow/red on those sub-expressions after the happy-path test.
+- **Anti-pattern:** Creating types that are never returned by the **same** `findInventoryTypes` / DAO path the production method uses — the loop runs but **all conjuncts are never true together**, so the inner body stays red.
+
+### 2) Every inner `catch (SpecificException e)` in **new** code
+
+- **Inventory-style example:** `catch (InventoryControllerException ex)` after `findInventoryTypes(customerMap)` — if this block is red, **no** amount of “normal” inventory setup fixes it. You need **either**:
+  - **Data-driven** failure (corrupt or boundary `CustomerMap` / settings so `findInventoryTypes` throws), **or**
+  - **Test-only spy/subclass** of the DAO or the **same controller instance** the injector uses, stubbing **only** the method that throws `InventoryControllerException`, with **`finally`** restoring state for other tests (see **Guice / singleton** note elsewhere in this prompt).
+- **Never** mark the file “done” while any **`catch` inside the PR diff** remains entirely red on JaCoCo.
+
+### 3) Nested collections: `for (date : productMap)` + `if (productInv != null)` + `if (productInv.containsKey(k) && !priceInv.containsKey(k))`
+
+This pattern **fails coverage** if **any** prerequisite is missing in the **same** invocation:
+
+| Requirement | Why |
+|---------------|-----|
+| `productInventoryTypeMap != null` with **≥1** date key | Outer loop must run |
+| For some date, `productInv != null` | Inner `if (productInv != null)` must be entered |
+| For some affecting type `T`, `productInv` contains `T` **and** `priceInv` does **not** yet | So `priceInv.put(...)` runs (not only `computeIfAbsent`) |
+| `affectingInventoryTypes` **non-empty** with an `InventoryType` whose `getInventoryType()` equals that key | Inner `for (InventoryType invType : affectingInventoryTypes)` must reach the `put` |
+
+**Anti-pattern:** Product-level and price-level rows exist in the DB mock, but **query keys** (allotment, channel, `Key.nullKey()` vs `Constants.NULL_KEY`, date boundaries, `inCalculated`) don’t match what `findInventory` builds — then maps are **always empty** or **never merged**, and lines **2379–2391** stay red.
+
+### 4) `catch (DataAccessException)` on DAO `find` / stream
+
+- Mock/in-memory DAO must throw **`DataAccessException` only** on the **intended** call (e.g. **calculated** + **null price** product-level fetch), not on **every** null-price read — otherwise **`processInventoryRequest`** or **AVAILABLE** gap-fill may throw **before** `findInventory` reaches the inner `catch`, and the test **fails** or covers the **wrong** catch.
+- Prefer **call-counted** stubs or a **narrow test flag** documented on the mock (reset in `finally`).
+
+### 5) Align IDE / Sonar / JaCoCo
+
+- If the user provides a **screenshot** with red gutter on lines **L1–L2**, treat that as the **authoritative gap list** until disproven by a green JaCoCo report on those lines after a **full** `mvn clean test -Psonar jacoco:report`.
+- After implementing tests, **re-open the same class** in `target/site/jacoco/...html` and confirm those lines are **green**, not “probably covered.”
+
+### Reference pattern (example: `InventoryControllerInternalImpl#findInventory` product-level affecting-type fallback)
+
+When Sonar shows gaps around **~2360–2405** (product-level null-price query + `findInventoryTypes` + merge into `priceInv`), ensure **in one session**:
+
+1. **Merge / put path:** price-level map **missing** an affecting type (OOO, MANAGERHOLD, …) that exists at **product null-price**; affecting-type list **includes** that type; **first** `find` returns price row, **second** returns product row — **same** `findInventory` call.
+2. **`findInventoryTypes` catch path:** exception from `findInventoryTypes` is caught and logged; method **still returns** a map (no rethrow).
+3. **DAO `DataAccessException` path:** inner `catch` around product-level fetch logs and continues (if this `catch` exists in the PR).
+4. **Optional:** `inOptions.getInventoryForDuration(...)` vs raw `inventoryMapDAO.find(...)` **both** exercised if both branches exist **and** Sonar marks either red — **key** `InventoryQueryKey` for null price must match production (`iqProductNullPrice`).
 
 ---
 
@@ -182,6 +240,7 @@ Environment:
 12. After writing tests for a file, verify whether the Sonar-reported uncovered lines for that file are now covered before moving on.
 
 ### Important:
+- **If Sonar reports uncovered conditions or gate ~88–91%:** follow **Condition coverage drill-down** (compound `&&` chains, nested map merges, **every** inner `catch`, narrow DAO throws) before adding more generic tests.
 - **Trace real data flow before claiming a branch is covered:** read the **production** method and list where each variable comes from (e.g. `CustomerMap` from `findCustomerMap(customerID, options)` vs a local you never attach to `ControllerOptions`). **Dead setup** (constructed maps, “broken” objects, spies) that are **never passed into the code under test** is a common reason Sonar stays red while JUnit is green. After writing the test, **grep the test body** for each setup variable and confirm it flows into the SUT call path.
 - **Sonar “else covered / if red” on `A && B`:** both conjuncts need tests. For cached-query branches, confirm **keys and arguments** match what production builds (e.g. `InventoryQueryKey` fields, allotment ID, `Key.nullKey()` vs `Constants.NULL_KEY` where applicable); a preloaded `inventoryQueries` map that uses the wrong key exercises **nothing** inside the `if`.
 - **Stubbing/spying methods invoked more than once per public API call:** one `findX()` or `dao.fetch()` may run from an inner `try` **and again later** in the same method after inner `catch`es complete. A stub that **always** throws can look like “catch coverage” while actually **failing the test** or skipping later lines. Prefer **call-counted** answers: first invocation throws (or special-case), later invocations **delegate to real** or return a cached result; **always `finally` restore** replaced fields on shared Guice singletons.
@@ -422,7 +481,7 @@ Interpret `projectStatus.status` / conditions (e.g. new_coverage) before claimin
 ---
 
 ## 💡 Golden Rules
-- **One user message = one task:** keep iterating (tests → full `mvn clean test -Psonar jacoco:report` → Sonar/JaCoCo review) until **Coverage on New Code ≥ 90%** or a documented blocker — not “good enough” at ~74–87%.
+- **One user message = one task:** keep iterating (tests → full `mvn clean test -Psonar jacoco:report` → Sonar/JaCoCo review) until **Coverage on New Code ≥ 90%** or a documented blocker — not “good enough” at ~74–89% (**88–89%** almost always means **residual red lines or uncovered conditions** on **one** production file — close that file’s checklist per **Condition coverage drill-down**).
 - Clean → test success → clean → **full-module** coverage (`jacoco:report` without `-Dtest=`)
 - Do not proceed to the next class before the current class’s Sonar-reported new-code gaps are addressed **and** JaCoCo shows no obvious remaining red in that file
 - Do not end the session until **all** Sonar-listed files are processed (or explicitly excluded)
