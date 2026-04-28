@@ -1,13 +1,29 @@
 ---
 agent: agent
 name: junit-generate-from-sonarQube
-description: Generate JUnit 4 tests for Sonar PR new-code gaps in aboveproperty-java; single session must reach ≥90% Coverage on New Code (full-module JaCoCo + all Sonar-listed files), not partial runs.
+description: Generate JUnit 4 tests for Sonar PR new-code gaps in aboveproperty-java; single session must reach ≥90% Coverage on New Code. **Edits: `src/test/java` (and session docs) only — production `src/main/java` read-only unless the user explicitly overrides.**
 ---
 
 # 🧠 Automated JUnit 4 Test Generation Guideline for Maven Module com.abvprp.core:aboveproperty-java
 
 You are generating **JUnit 4** test cases for module `com.abvprp.core:aboveproperty-java` in a Maven multi-module Java project.
 Follow these rules for correctness, maintainability, and reliable coverage tracking.
+
+---
+
+## ⛔ Scope: test-only changes (production / PR code is read-only)
+
+**Default rule:** This workflow **only adds or edits automated tests and test documentation**. Do **not** modify application production code to satisfy Sonar or JaCoCo.
+
+| Allowed | Not allowed (without explicit user instruction in chat) |
+|--------|-----------------------------------------------------------|
+| New or changed classes under `src/test/java/**` (JUnit, test helpers, `@Rule`, test `Module` overrides in test sources if the project supports it) | Edits to **`src/main/java/**`** that implement or change **product behavior**, including the **PR’s changed production files** (“the modified code”) |
+| Session / prompt artifacts under `.github/docs/junit-generation-from-sonarqube-pr*.md` when this prompt asks for them | Refactors, visibility changes, or “testability hooks” in production classes |
+| Optional: test scoped `pom.xml` / Surefire **test** dependency additions **only** if required for compilation of **new test code** and **UNIT_TEST_GUIDELINES.md** allows it — prefer asking the user first | Production dependency changes, Sonar/JaCoCo **exclusion** tweaks in `pom.xml` to hide gaps, or broad `pom` edits unrelated to missing **test** deps |
+
+**Colocated test doubles:** Some repos keep in-memory DAOs under `src/main/java/.../mock/` or similar. **Do not** change those **unless** the user explicitly allows it; prefer **new** stubs/spies under `src/test/java` or test-only subclasses. If coverage cannot be reached without touching `src/main/java`, **stop**, list the exact lines, and state *“production change required — not applied per prompt scope”* in the session summary; optionally describe what change *would* unblock coverage for the user to apply separately.
+
+**Static helpers / visibility:** Do **not** refactor production to inject dependencies or expose package-private members for tests. Use patterns already allowed in **`UNIT_TEST_GUIDELINES.md`** (fixtures, spies on **test-controlled** collaborators, reflection only where the guidelines already permit).
 
 ---
 
@@ -122,7 +138,7 @@ This pattern **fails coverage** if **any** prerequisite is missing in the **same
 ### 4) `catch (DataAccessException)` on DAO `find` / stream
 
 - Mock/in-memory DAO must throw **`DataAccessException` only** on the **intended** call (e.g. **calculated** + **null price** product-level fetch), not on **every** null-price read — otherwise **`processInventoryRequest`** or **AVAILABLE** gap-fill may throw **before** `findInventory` reaches the inner `catch`, and the test **fails** or covers the **wrong** catch.
-- Prefer **call-counted** stubs or a **narrow test flag** documented on the mock (reset in `finally`).
+- Prefer **call-counted** stubs or test-local helpers under **`src/test/java`**. If the project already uses a **`src/main/java/.../mock/`** class with a test flag, changing it may be acceptable **only** when the user explicitly allows non-test-only paths — default is **do not** edit `src/main/java`.
 
 ### 5) Align IDE / Sonar / JaCoCo
 
@@ -161,18 +177,19 @@ If anything in this prompt conflicts with **`UNIT_TEST_GUIDELINES.md`**, follow 
 ---
 
 ## 🎯 Core Principles
-1. The primary objective is **PR new-code coverage ≥ 90%** on Sonar’s Quality Gate (“Coverage on New Code”), not “most” lines or a single large class fixed.
-2. Work **one Sonar-reported class at a time** in priority order (largest `new_uncovered_lines` / `new_uncovered_conditions` first), but **do not end the session until every listed file** with uncovered new code has been processed (see **Single-execution completion gate**).
-3. Always clean before test/coverage runs.
-4. Fix all test errors before coverage checks.
-5. Fix compilation errors immediately (do not recreate files).
-6. Check results after every cycle — prefer **full-module** JaCoCo for gate checks (see **Mandatory final verification**).
-7. Start with happy-path, then edge/failure cases; **always** include at least one test per distinct **catch**, **switch default**, and **boolean condition** Sonar marks as partially covered.
-8. Cover the exact Sonar-reported uncovered lines and conditions first; then add **buffer** tests on the same methods until JaCoCo on that file is **~92–93%** line coverage where feasible.
-9. Class coverage target: **≥ 90%** for touched classes whenever feasible; treat **≥ 92%** on JaCoCo as the practical stop condition when Sonar cannot be re-read in-session.
-10. Module coverage target: **≥ 90%** when the module is part of the scoped task and reachable from the changed files.
-11. Only explicitly approved exclusions may skip testing.
-12. **Never** declare success based only on `mvn test -Dtest=YourNewTest` + JaCoCo — that often **overstates** progress versus CI’s full suite.
+1. **Scope:** Only **`src/test/java`** (and requested `.github/docs/…` summaries). **No edits to production `src/main/java`** unless the user explicitly overrides — see **Scope: test-only changes**.
+2. The primary objective is **PR new-code coverage ≥ 90%** on Sonar’s Quality Gate (“Coverage on New Code”), not “most” lines or a single large class fixed.
+3. Work **one Sonar-reported class at a time** in priority order (largest `new_uncovered_lines` / `new_uncovered_conditions` first), but **do not end the session until every listed file** with uncovered new code has been processed (see **Single-execution completion gate**).
+4. Always clean before test/coverage runs.
+5. Fix all test errors before coverage checks.
+6. Fix compilation errors immediately (do not recreate files).
+7. Check results after every cycle — prefer **full-module** JaCoCo for gate checks (see **Mandatory final verification**).
+8. Start with happy-path, then edge/failure cases; **always** include at least one test per distinct **catch**, **switch default**, and **boolean condition** Sonar marks as partially covered.
+9. Cover the exact Sonar-reported uncovered lines and conditions first; then add **buffer** tests on the same methods until JaCoCo on that file is **~92–93%** line coverage where feasible.
+10. Class coverage target: **≥ 90%** for touched classes whenever feasible; treat **≥ 92%** on JaCoCo as the practical stop condition when Sonar cannot be re-read in-session.
+11. Module coverage target: **≥ 90%** when the module is part of the scoped task and reachable from the changed files.
+12. Only explicitly approved exclusions may skip testing.
+13. **Never** declare success based only on `mvn test -Dtest=YourNewTest` + JaCoCo — that often **overstates** progress versus CI’s full suite.
 
 ---
 
@@ -226,8 +243,8 @@ Environment:
    - JUnit 4, Hamcrest + JUnit `Assert`
    - Mockito 1.x with `mock()` / `when()` / `verify()` (not annotation-driven runner mocks unless an existing test class already uses that pattern consistently)
 5. Prefer extending existing test classes if a matching test file likely already exists.
-6. Do not change production code unless absolutely necessary for testability.
-7. If a line looks unreachable without a small safe refactor, clearly call that out separately.
+6. **Do not change production code** (`src/main/java` application logic, including files touched by the PR). Achieve coverage **only** via tests and approved test infrastructure (see **Scope: test-only changes**).
+7. If a line looks unreachable **without** editing production, document line numbers and why tests cannot hit them; **do not** refactor production as part of this task. If the user later asks for a production change, treat it as **outside** this prompt’s default scope.
 8. For each file, provide:
    - Why the lines are currently uncovered
    - The exact test scenarios needed
@@ -240,7 +257,8 @@ Environment:
 12. After writing tests for a file, verify whether the Sonar-reported uncovered lines for that file are now covered before moving on.
 
 ### Important:
-- **If Sonar reports uncovered conditions or gate ~88–91%:** follow **Condition coverage drill-down** (compound `&&` chains, nested map merges, **every** inner `catch`, narrow DAO throws) before adding more generic tests.
+- **Production code is read-only** for this workflow: all gaps must be closed from **`src/test/java`** (and optional docs). Never edit the PR’s production diff “to help coverage.”
+- **If Sonar reports uncovered conditions or gate ~88–91%:** follow **Condition coverage drill-down** (compound `&&` chains, nested map merges, **every** inner `catch`, narrow DAO throws) before adding more generic tests — using **test-side** setup, mocks, spies, and data only.
 - **Trace real data flow before claiming a branch is covered:** read the **production** method and list where each variable comes from (e.g. `CustomerMap` from `findCustomerMap(customerID, options)` vs a local you never attach to `ControllerOptions`). **Dead setup** (constructed maps, “broken” objects, spies) that are **never passed into the code under test** is a common reason Sonar stays red while JUnit is green. After writing the test, **grep the test body** for each setup variable and confirm it flows into the SUT call path.
 - **Sonar “else covered / if red” on `A && B`:** both conjuncts need tests. For cached-query branches, confirm **keys and arguments** match what production builds (e.g. `InventoryQueryKey` fields, allotment ID, `Key.nullKey()` vs `Constants.NULL_KEY` where applicable); a preloaded `inventoryQueries` map that uses the wrong key exercises **nothing** inside the `if`.
 - **Stubbing/spying methods invoked more than once per public API call:** one `findX()` or `dao.fetch()` may run from an inner `try` **and again later** in the same method after inner `catch`es complete. A stub that **always** throws can look like “catch coverage” while actually **failing the test** or skipping later lines. Prefer **call-counted** answers: first invocation throws (or special-case), later invocations **delegate to real** or return a cached result; **always `finally` restore** replaced fields on shared Guice singletons.
@@ -367,7 +385,7 @@ Before generating tests, verify:
 - ✅ `mvn clean compile test-compile` succeeds
 - ✅ Coverage/test exclusions are aligned to current pom/profile config
 
-If required dependencies are missing, stop and update `pom.xml` first.
+If required **test** dependencies are missing, stop and either add the minimal **test**-scoped dependency in `pom.xml` **with the same conventions as existing test deps** or ask the user — do **not** use `pom` edits to exclude production code from coverage or to bypass the gate.
 
 ---
 
@@ -409,7 +427,7 @@ Then open `target/site/jacoco/index.html` and clear **red** lines / partial bran
 
 ### Static methods note
 Mockito 1.10.19 does **not** support `mockStatic`.
-Prefer refactoring static dependencies behind injectable collaborators.
+**Do not** refactor production to inject static dependencies for coverage. Use existing call paths, test data, collaborators already injectable in tests, or document the gap if production cannot be exercised from tests alone.
 
 ### Guice / singleton controllers (nested `catch` + DAO paths only)
 When **real** fixtures cannot trigger a **nested** `catch` (e.g. `findInventoryTypes` → `inventoryTypeDAO.fetch` wrapped in `InventoryControllerException`), prefer (1) data-driven failure if the stack allows it; else (2) **`spy` the real injected DAO** on the **same instance** the controller uses (often via package-private `Field` access on the impl), stub **only** the narrow method + argument, use a **call counter** when that method is invoked **again later** in the same public method, and **`finally` restore** the original field so other tests are not poisoned. Prefer **`UNIT_TEST_GUIDELINES.md`** patterns where possible; document any reflection/spy in the session summary as a deliberate exception.
@@ -470,6 +488,7 @@ Interpret `projectStatus.status` / conditions (e.g. new_coverage) before claimin
 ---
 
 ## 🚦 Validation Checkpoints
+✅ **Diff scope:** Changes limited to **`src/test/java`** (plus `.github/docs/junit-generation-*.md` if written); **no** production `src/main/java` edits unless the user explicitly approved  
 ✅ Tests pass on **`mvn clean test -Psonar`** (full module scope, not only new test classes)  
 ✅ Clean compile before coverage  
 ✅ **Every** file with `new_uncovered_lines` / `new_uncovered_conditions` from the script (or Sonar UI) addressed — not only the top file  
@@ -481,6 +500,7 @@ Interpret `projectStatus.status` / conditions (e.g. new_coverage) before claimin
 ---
 
 ## 💡 Golden Rules
+- **Tests only:** Default edits are **`src/test/java`** (and session markdown under `.github/docs/` when requested). **Never** change production `src/main/java` or the PR’s feature code unless the user explicitly overrides — see **Scope: test-only changes**.
 - **One user message = one task:** keep iterating (tests → full `mvn clean test -Psonar jacoco:report` → Sonar/JaCoCo review) until **Coverage on New Code ≥ 90%** or a documented blocker — not “good enough” at ~74–89% (**88–89%** almost always means **residual red lines or uncovered conditions** on **one** production file — close that file’s checklist per **Condition coverage drill-down**).
 - Clean → test success → clean → **full-module** coverage (`jacoco:report` without `-Dtest=`)
 - Do not proceed to the next class before the current class’s Sonar-reported new-code gaps are addressed **and** JaCoCo shows no obvious remaining red in that file
@@ -501,7 +521,7 @@ After completing test generation for all targeted files:
    - **Per-file table** using the **Files Processed** columns below (Sonar line anchor or screenshot name, `→ Test#method` mapping, JaCoCo proof from **full** module run — not scoped `-Dtest=` alone).
    - Test classes created or modified.
    - Coverage improvement per class (before → after), with emphasis on new-code coverage impact.
-   - Any production code changes made for testability.
+   - Production code changes: **none** (default). List changes **only** if the user explicitly approved edits outside `src/test/java` / session docs.
    - Any lines flagged as unreachable or excluded.
    - Remaining gaps preventing PR new-code coverage from exceeding 90%, if any.
 
