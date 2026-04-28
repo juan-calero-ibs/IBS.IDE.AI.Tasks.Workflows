@@ -17,9 +17,9 @@ The Quality Gate measures **Coverage on New Code** only (not overall project cov
 
 ### Do this in order before writing the first test
 
-1. **Authenticate Sonar** — `export SONAR_TOKEN=…` from the environment (never ask the user to paste secrets into chat). If  
-   `curl -s -o /dev/null -w '%{http_code}' -u "${SONAR_TOKEN}:" "${SONAR_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}&pullRequest=${PR_KEY}"`  
-   returns **401**, fix token/VPN first; **in parallel** still run `git diff <target-branch>...HEAD` on `aboveproperty.java` so the session is not wasted.
+1. **Authenticate Sonar** — `export SONAR_TOKEN=…` from the environment (never ask the user to paste secrets into chat). **Sanity-check auth on a protected endpoint**, not only anonymous ones: e.g. `system/status` may return **200 without a token** while `api/measures/component_tree?…` returns **401** with a bad token. Prefer:  
+   `curl -s -o /dev/null -w '%{http_code}' -u "${SONAR_TOKEN}:" "${SONAR_URL}/api/measures/component_tree?component=${PROJECT_KEY}&pullRequest=${PR_KEY}&metricKeys=new_uncovered_lines&ps=1"`  
+   You want **200** and a JSON body with `components` (or equivalent). If you get **401** or **0-byte body**, fix the token (user token from **Account → Security**, project access) or VPN **before** interpreting `sonar_pr_uncovered_lines.sh` output. **An empty TSV from the script is not proof of zero gaps** until this check passes. If auth is still broken, run `git diff <target-branch>...HEAD` on `aboveproperty.java` anyway — but label the gap checklist **unverified** until Sonar or a **full** JaCoCo line view confirms closure.
 2. **Open the Sonar “Coverage on New Code” file list** for the PR (same data as the measures UI), e.g.  
    `…/component_measures?id=<PROJECT_KEY>&pullRequest=<PR_KEY>&metric=new_coverage&view=list`  
    Sort by **uncovered lines** / lowest file coverage. Treat every file in that list with material new code as **in scope**.
@@ -123,7 +123,7 @@ Generate JUnit test cases that specifically target the files, line numbers, and 
 
 ### Limitation of `sonar_pr_uncovered_lines.sh` (critical)
 
-The script at `scripts/sonar/sonar_pr_uncovered_lines.sh` outputs **per-file counts** (`new_uncovered_lines`, `new_uncovered_conditions`) — **not** individual line numbers. **Counts alone are insufficient** to know when to stop; they caused premature stopping with **~74–87%** gate coverage while many files still had non-zero counts.
+The script at `scripts/sonar/sonar_pr_uncovered_lines.sh` outputs **per-file counts** (`new_uncovered_lines`, `new_uncovered_conditions`) — **not** individual line numbers. **Counts alone are insufficient** to know when to stop; they caused premature stopping with **~74–87%** gate coverage while many files still had non-zero counts. **Also:** if `SONAR_TOKEN` is wrong, the script may print **nothing** (filtering yields no rows) while the API returned **401** — always perform the **authenticated** `curl` check in step 1 of the one-shot list before treating empty script output as “no uncovered lines.”
 
 You must also obtain **line- or branch-level** targets using one or more of:
 
@@ -136,6 +136,16 @@ You must also obtain **line- or branch-level** targets using one or more of:
 4. **Local JaCoCo** (after **full** `mvn clean test -Psonar jacoco:report`): use `target/site/jacoco/*.html` (and optionally `jacoco.xml`) to find **red** lines and **partial** branches in each PR-touched file.
 
 Build an explicit **checklist** (file → line ranges or method names → test method mapping). Check items off as you add tests. **Do not skip files** that still have `new_uncovered_lines > 0` in the script output.
+
+### Definition of done (per source file — before leaving that file)
+
+Do **not** mark a `src/main/java/...` file “addressed” until **all** of the following are satisfied for that file (one compact block in the session summary or PR notes is enough):
+
+1. **Sonar anchor:** Paste the **uncovered line numbers** (or ranges) from Sonar **Coverage on New Code** for that file, **or** cite the **exact screenshot / export filename** the user provided if line numbers are not in chat.
+2. **Test mapping:** One explicit line per gap cluster: `RelativePath.java:Lstart–Lend → FullyQualifiedTestClass#testMethodName` (add lines if multiple tests close disjoint ranges).
+3. **JaCoCo proof after full module run:** Run **`mvn clean test -Psonar jacoco:report`** with **no** `-Dtest=`, open `target/site/jacoco/.../<File>.html`, and record evidence that the targeted lines/branches are **no longer red / partial** (paste the JaCoCo **line coverage table** snippet for that class, or list **former red line → covered** in bullets). Scoped `-Dtest=` JaCoCo alone **does not** satisfy this item.
+
+Skipping (1)–(3) is what allows “tests added” without Sonar moving — the agent must **tie work to reported lines** and **prove** closure on the same artifact CI uses.
 
 ### Instructions to run script sonar_pr_uncovered_lines.sh
 
@@ -172,6 +182,9 @@ Environment:
 12. After writing tests for a file, verify whether the Sonar-reported uncovered lines for that file are now covered before moving on.
 
 ### Important:
+- **Trace real data flow before claiming a branch is covered:** read the **production** method and list where each variable comes from (e.g. `CustomerMap` from `findCustomerMap(customerID, options)` vs a local you never attach to `ControllerOptions`). **Dead setup** (constructed maps, “broken” objects, spies) that are **never passed into the code under test** is a common reason Sonar stays red while JUnit is green. After writing the test, **grep the test body** for each setup variable and confirm it flows into the SUT call path.
+- **Sonar “else covered / if red” on `A && B`:** both conjuncts need tests. For cached-query branches, confirm **keys and arguments** match what production builds (e.g. `InventoryQueryKey` fields, allotment ID, `Key.nullKey()` vs `Constants.NULL_KEY` where applicable); a preloaded `inventoryQueries` map that uses the wrong key exercises **nothing** inside the `if`.
+- **Stubbing/spying methods invoked more than once per public API call:** one `findX()` or `dao.fetch()` may run from an inner `try` **and again later** in the same method after inner `catch`es complete. A stub that **always** throws can look like “catch coverage” while actually **failing the test** or skipping later lines. Prefer **call-counted** answers: first invocation throws (or special-case), later invocations **delegate to real** or return a cached result; **always `finally` restore** replaced fields on shared Guice singletons.
 - **Captor over `any()` for new builder/chained fields:** when PR code builds a `QueueTask` (or similar) and passes it to `queueController.queueTask(...)`, `verify(queueController).queueTask(any())` often **does not** cover new chained setters. Capture the argument and assert **each** new field the PR introduced.
 - Be precise about line coverage vs condition coverage.
 - If uncovered conditions exist, explicitly create tests for both true/false paths.
@@ -339,6 +352,9 @@ Then open `target/site/jacoco/index.html` and clear **red** lines / partial bran
 Mockito 1.10.19 does **not** support `mockStatic`.
 Prefer refactoring static dependencies behind injectable collaborators.
 
+### Guice / singleton controllers (nested `catch` + DAO paths only)
+When **real** fixtures cannot trigger a **nested** `catch` (e.g. `findInventoryTypes` → `inventoryTypeDAO.fetch` wrapped in `InventoryControllerException`), prefer (1) data-driven failure if the stack allows it; else (2) **`spy` the real injected DAO** on the **same instance** the controller uses (often via package-private `Field` access on the impl), stub **only** the narrow method + argument, use a **call counter** when that method is invoked **again later** in the same public method, and **`finally` restore** the original field so other tests are not poisoned. Prefer **`UNIT_TEST_GUIDELINES.md`** patterns where possible; document any reflection/spy in the session summary as a deliberate exception.
+
 ---
 
 ## 🧩 JUnit 4 Example Templates (align with UNIT_TEST_GUIDELINES.md)
@@ -398,6 +414,7 @@ Interpret `projectStatus.status` / conditions (e.g. new_coverage) before claimin
 ✅ Tests pass on **`mvn clean test -Psonar`** (full module scope, not only new test classes)  
 ✅ Clean compile before coverage  
 ✅ **Every** file with `new_uncovered_lines` / `new_uncovered_conditions` from the script (or Sonar UI) addressed — not only the top file  
+✅ **Per-file definition of done** (see **Class Selection**): Sonar line anchor + `File:Lx–y → Test#method` mapping + JaCoCo HTML snippet from the **full** `jacoco:report` run, for each processed source file  
 ✅ Final JaCoCo review shows **~92–93%** line coverage buffer on those files **or** Sonar shows **Coverage on New Code ≥ 90%**  
 ✅ Quality Gate API or dashboard checked when possible  
 ✅ Exclusions aligned to pom/profile  
@@ -422,7 +439,7 @@ After completing test generation for all targeted files:
 1. **Generate a short session summary** covering:
    - PR number and SonarQube project key used.
    - **Sonar Quality Gate**: paste or summarize `api/qualitygates/project_status` for the PR (`status`, and the **`new_coverage`** / “Coverage on New Code” condition if present) — **required** when Sonar was reachable; if unreachable, state that and point to JaCoCo buffer results instead.
-   - List of files processed with uncovered lines/conditions addressed.
+   - **Per-file table** using the **Files Processed** columns below (Sonar line anchor or screenshot name, `→ Test#method` mapping, JaCoCo proof from **full** module run — not scoped `-Dtest=` alone).
    - Test classes created or modified.
    - Coverage improvement per class (before → after), with emphasis on new-code coverage impact.
    - Any production code changes made for testability.
@@ -447,9 +464,9 @@ After completing test generation for all targeted files:
    - Full module test: <passed | failed — note scope>
 
    ## Files Processed
-   | File | Uncovered Lines | Uncovered Conditions | Test Class | Coverage Before | Coverage After |
-   |------|----------------|---------------------|------------|----------------|----------------|
-   | ...  | ...            | ...                 | ...        | ...            | ...            |
+   | File | Sonar lines / evidence | Test mapping (`File:Lx–y → Test#method`) | JaCoCo proof (full `mvn test -Psonar`) | Uncovered (before) | Uncovered (after) |
+   |------|------------------------|--------------------------------------------|----------------------------------------|----------------------|-------------------|
+   | `src/main/java/.../Foo.java` | e.g. Sonar L2342–2391 or `screenshot-foo.png` | `Foo.java:L2342–2357 → BarTest#testCachedPath` | paste line table snippet or “L2398 catch: was red → green” | 7 lines, 6 cond. | 0 / re-check Sonar |
 
    ## Changes Made
    - ...
