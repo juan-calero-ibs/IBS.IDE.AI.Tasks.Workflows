@@ -2,15 +2,57 @@
 
 set -euo pipefail
 
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+GREY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+print_valid_values() {
+  local values=("$@")
+
+  if [[ "${#values[@]}" -gt 0 ]]; then
+    echo -e "${GREY}  Valid values: ${values[*]}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+  read -r value
+
+  echo "${value:-$default}"
+}
+
 prompt_valid_value() {
   local prompt="$1"
   local default="$2"
-  shift 2
+  local help_text="$3"
+  shift 3
   local valid_values=("$@")
   local value
 
   while true; do
-    read -r -p "$prompt [$default]: " value
+    print_help "$help_text"
+    print_valid_values "${valid_values[@]}"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
     value=${value:-$default}
 
     for valid in "${valid_values[@]}"; do
@@ -20,17 +62,21 @@ prompt_valid_value() {
       fi
     done
 
-    echo "❌ Invalid value. Valid values are: ${valid_values[*]}" >&2
+    echo -e "${RED}❌ Invalid value. Valid values are: ${valid_values[*]}${RESET}" >&2
   done
 }
 
 prompt_positive_int() {
   local prompt="$1"
   local default="$2"
+  local help_text="${3:-}"
   local value
 
   while true; do
-    read -r -p "$prompt [$default]: " value
+    print_help "$help_text"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
     value=${value:-$default}
 
     if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
@@ -38,7 +84,7 @@ prompt_positive_int() {
       return 0
     fi
 
-    echo "❌ Invalid value. Please enter a positive number." >&2
+    echo -e "${RED}❌ Invalid value. Please enter a positive number.${RESET}" >&2
   done
 }
 
@@ -47,7 +93,9 @@ prompt_secret_value() {
   local value
 
   while true; do
-    read -r -s -p "$prompt: " value
+    print_help "Required for non-dry-run APS reindex calls."
+    echo -ne "${BOLD}${prompt}${RESET}: " >&2
+    read -r -s value
     echo >&2
 
     if [[ -n "$value" ]]; then
@@ -55,7 +103,7 @@ prompt_secret_value() {
       return 0
     fi
 
-    echo "❌ Value is required." >&2
+    echo -e "${RED}❌ Value is required.${RESET}" >&2
   done
 }
 
@@ -83,6 +131,7 @@ prompt_s3_file() {
   local bucket="$2"
   local prefix="$3"
   local file_scope="$4"
+  local sort_order="$5"
 
   local selected_file
   local files=()
@@ -104,36 +153,51 @@ prompt_s3_file() {
     query="Contents[?Size>\`0\`].[LastModified,Size,Key]"
   fi
 
-  mapfile -t rows < <(
-    aws s3api list-objects-v2 \
-      --region "$region" \
-      --bucket "$bucket" \
-      --prefix "$prefix" \
-      --query "$query" \
-      --output text 2>/dev/null \
-    | awk 'NF'
-  )
+  if [[ "$sort_order" == "newest" ]]; then
+    mapfile -t rows < <(
+      aws s3api list-objects-v2 \
+        --region "$region" \
+        --bucket "$bucket" \
+        --prefix "$prefix" \
+        --query "$query" \
+        --output text 2>/dev/null \
+      | awk 'NF' \
+      | sort -r
+    )
+  else
+    mapfile -t rows < <(
+      aws s3api list-objects-v2 \
+        --region "$region" \
+        --bucket "$bucket" \
+        --prefix "$prefix" \
+        --query "$query" \
+        --output text 2>/dev/null \
+      | awk 'NF' \
+      | sort
+    )
+  fi
 
   if [[ "${#rows[@]}" -eq 0 ]]; then
-    echo "❌ No files found in s3://${bucket}/${prefix}" >&2
+    echo -e "${RED}❌ No files found in s3://${bucket}/${prefix}${RESET}" >&2
 
     if [[ "$file_scope" == "today" ]]; then
-      echo "Tip: choose 'all' to list all files." >&2
+      echo -e "${GREY}  Tip: choose 'all' to list all files.${RESET}" >&2
     fi
 
     exit 1
   fi
 
   echo >&2
-  echo "📄 Available files in s3://${bucket}/${prefix}" >&2
+  echo -e "${BOLD}${CYAN}📄 Available files in s3://${bucket}/${prefix}${RESET}" >&2
+  echo -e "${GREY}  Sort: ${sort_order}${RESET}" >&2
 
   if [[ "$file_scope" == "today" ]]; then
-    echo "Date Filter: ${today_utc} UTC" >&2
+    echo -e "${GREY}  Date Filter: ${today_utc} UTC${RESET}" >&2
   fi
 
   echo >&2
-  printf '%-30s %-12s %s\n' "LAST MODIFIED" "SIZE" "FILE" >&2
-  printf '%-30s %-12s %s\n' "-------------" "----" "----" >&2
+  echo -e "${GREY}$(printf '%-30s %-12s %s' "LAST MODIFIED" "SIZE" "FILE")${RESET}" >&2
+  echo -e "${GREY}$(printf '%-30s %-12s %s' "-------------" "----" "----")${RESET}" >&2
 
   for line in "${rows[@]}"; do
     last_modified=$(echo "$line" | awk '{print $1}')
@@ -145,13 +209,15 @@ prompt_s3_file() {
 
     files+=("$file_name")
 
-    printf '%-30s %-12s %s\n' "$last_modified" "$display_size" "$file_name" >&2
+    echo -e "${GREY}$(printf '%-30s %-12s %s' "$last_modified" "$display_size" "$file_name")${RESET}" >&2
   done
 
   echo >&2
 
   while true; do
-    read -r -p "Enter S3 file name: " selected_file
+    print_help "Type the exact file name from the list above."
+    echo -ne "${BOLD}Enter S3 file name${RESET}: " >&2
+    read -r selected_file
 
     for file in "${files[@]}"; do
       if [[ "$selected_file" == "$file" ]]; then
@@ -160,42 +226,72 @@ prompt_s3_file() {
       fi
     done
 
-    echo "❌ Invalid file. Valid files are:" >&2
+    echo -e "${RED}❌ Invalid file. Valid files are:${RESET}" >&2
     printf ' - %s\n' "${files[@]}" >&2
   done
 }
 
-read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
-AWS_REGION=${AWS_REGION:-us-east-1}
+if ! command -v jq >/dev/null 2>&1; then
+  echo -e "${RED}❌ jq is required.${RESET}"
+  echo "Install with:"
+  echo "  brew install jq"
+  exit 1
+fi
 
-read -r -p "Enter AWS Batch job queue [solr9-reindex-job-queue]: " JOB_QUEUE
-JOB_QUEUE=${JOB_QUEUE:-solr9-reindex-job-queue}
+echo
+echo -e "${BOLD}${CYAN}🚀 Submit Solr9 Reindex AWS Batch Job${RESET}"
+echo -e "${GREY}  This script passes only the valid manifest environment variable: MANIFEST_S3_URI.${RESET}"
+echo
 
-read -r -p "Enter AWS Batch job definition [solr9-reindex-job-definition]: " JOB_DEFINITION
-JOB_DEFINITION=${JOB_DEFINITION:-solr9-reindex-job-definition}
+AWS_REGION=$(prompt_value \
+  "Enter AWS region" \
+  "us-east-1" \
+  "AWS region used for AWS Batch and S3 commands.")
 
-read -r -p "Enter S3 bucket [solr9-ids-for-indexing]: " BUCKET
-BUCKET=${BUCKET:-solr9-ids-for-indexing}
+JOB_QUEUE=$(prompt_value \
+  "Enter AWS Batch job queue" \
+  "solr9-reindex-job-queue" \
+  "AWS Batch job queue where the reindex job will be submitted.")
+
+JOB_DEFINITION=$(prompt_value \
+  "Enter AWS Batch job definition" \
+  "solr9-customers-reindex:6" \
+  "Use the correct revision. If the Python runner image or command changed, register a new job definition revision first.")
+
+BUCKET=$(prompt_value \
+  "Enter S3 bucket" \
+  "solr9-ids-for-indexing" \
+  "Bucket containing the manifest files.")
 
 COLLECTION=$(prompt_valid_value \
   "Enter collection" \
   "customers" \
+  "Collection path segment in S3 and container environment." \
   customers agreements products reservations reservationproducts)
 
 ENVIRONMENT=$(prompt_valid_value \
   "Enter environment" \
   "dev" \
+  "Environment path segment in S3 and container environment." \
   dev stage prod)
 
 S3_FOLDER=$(prompt_valid_value \
   "Enter S3 folder" \
   "input" \
-  input output invalid replay summary)
+  "Folder containing the manifest to submit." \
+  input output invalid replay summary skipped)
 
 FILE_SCOPE=$(prompt_valid_value \
   "List today's files or all files?" \
   "today" \
+  "today filters using the current UTC date. all lists every file under the selected prefix." \
   today all)
+
+SORT_ORDER=$(prompt_valid_value \
+  "Sort files by date" \
+  "newest" \
+  "Controls the S3 file list order." \
+  newest oldest)
 
 S3_PREFIX="${COLLECTION}/${ENVIRONMENT}/${S3_FOLDER}/"
 
@@ -203,47 +299,92 @@ S3_FILE=$(prompt_s3_file \
   "$AWS_REGION" \
   "$BUCKET" \
   "$S3_PREFIX" \
-  "$FILE_SCOPE")
+  "$FILE_SCOPE" \
+  "$SORT_ORDER")
 
 MANIFEST_S3_URI="s3://${BUCKET}/${S3_PREFIX}${S3_FILE}"
 
-read -r -p "Enter BASE_URL [http://localhost:28080]: " BASE_URL
-BASE_URL=${BASE_URL:-http://localhost:28080}
+BASE_URL=$(prompt_value \
+  "Enter BASE_URL" \
+  "http://localhost:28080" \
+  "APS solrMigrationWorker URL.
+  http://localhost:18080 = container solrMigrationWorker.
+  http://localhost:28080 = EC2 node solrMigrationWorker.")
 
-read -r -p "Enter ADMIN_USERNAME [admin]: " ADMIN_USERNAME
-ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-
-ADMIN_PASSWORD=$(prompt_secret_value "Enter ADMIN_PASSWORD")
-
-BATCH_SIZE=$(prompt_positive_int \
-  "Enter batch size" \
-  "100")
-
-MAX_HTTP_RETRIES=$(prompt_valid_value \
-  "Enter max HTTP retries" \
-  "0" \
-  0 1 2 3)
+ADMIN_USERNAME=$(prompt_value \
+  "Enter ADMIN_USERNAME" \
+  "admin" \
+  "Admin username for APS Basic auth.")
 
 DRY_RUN=$(prompt_valid_value \
   "Dry run?" \
   "0" \
+  "1 validates/writes artifacts without calling APS. 0 performs the reindex." \
   0 1)
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  ADMIN_PASSWORD=""
+  echo -e "${GREY}  Dry run enabled; ADMIN_PASSWORD will not be prompted.${RESET}" >&2
+else
+  ADMIN_PASSWORD=$(prompt_secret_value \
+    "Enter ADMIN_PASSWORD")
+fi
+
+BATCH_SIZE=$(prompt_positive_int \
+  "Enter batch size" \
+  "100" \
+  "Maximum number of IDs per batch POST.")
+
+MAX_HTTP_RETRIES=$(prompt_valid_value \
+  "Enter max HTTP retries" \
+  "0" \
+  "0 means no retry after the initial HTTP attempt." \
+  0 1 2 3 4 5)
 
 PER_ID_ON_BATCH_FAILURE=$(prompt_valid_value \
   "Enable per-id fallback on batch failure?" \
   "1" \
+  "1 retries failed batch IDs individually for better replay artifacts. 0 keeps batch-level failure attribution." \
   0 1)
 
 SKIP_EXISTING_IN_SOLR9=$(prompt_valid_value \
   "Skip existing docs in Solr9?" \
   "0" \
+  "1 checks Solr9 first and skips IDs already present. Requires SOLR9_URL if enabled." \
   0 1)
+
+SOLR9_URL=""
+SOLR9_AUTH=""
+SOLR9_TERMS_BATCH=""
+SOLR9_TIMEOUT_SECONDS=""
+
+if [[ "$SKIP_EXISTING_IN_SOLR9" == "1" ]]; then
+  SOLR9_URL=$(prompt_value \
+    "Enter SOLR9_URL" \
+    "http://localhost:9010/solr/${COLLECTION}" \
+    "Solr9 collection URL used for skip-existing checks.")
+
+  SOLR9_AUTH=$(prompt_value \
+    "Enter SOLR9_AUTH" \
+    "" \
+    "Optional USER:PASS for Solr9. Press ENTER to leave empty.")
+
+  SOLR9_TERMS_BATCH=$(prompt_positive_int \
+    "Enter SOLR9_TERMS_BATCH" \
+    "1500" \
+    "Max IDs per Solr9 {!terms f=id} query.")
+
+  SOLR9_TIMEOUT_SECONDS=$(prompt_positive_int \
+    "Enter SOLR9_TIMEOUT_SECONDS" \
+    "120" \
+    "Timeout per Solr9 /select request.")
+fi
 
 TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
 JOB_NAME="solr9-${COLLECTION}-reindex-${ENVIRONMENT}-${TIMESTAMP}"
 
 echo
-echo "🚀 Submitting AWS Batch job"
+echo -e "${BOLD}${CYAN}🔎 Submit summary${RESET}"
 echo "Region:                  $AWS_REGION"
 echo "Job Queue:               $JOB_QUEUE"
 echo "Job Definition:          $JOB_DEFINITION"
@@ -253,41 +394,103 @@ echo "Collection:              $COLLECTION"
 echo "Environment:             $ENVIRONMENT"
 echo "S3 Folder:               $S3_FOLDER"
 echo "Manifest S3 URI:         $MANIFEST_S3_URI"
+echo "MANIFEST_S3_URI env:     $MANIFEST_S3_URI"
 echo "Base URL:                $BASE_URL"
+echo "Base URL Note:           18080=container solrMigrationWorker, 28080=EC2 node solrMigrationWorker"
+echo "Admin Username:          $ADMIN_USERNAME"
+echo "Admin Password:          ********"
 echo "Batch Size:              $BATCH_SIZE"
 echo "Max HTTP Retries:        $MAX_HTTP_RETRIES"
 echo "Dry Run:                 $DRY_RUN"
 echo "Per-ID Batch Fallback:   $PER_ID_ON_BATCH_FAILURE"
 echo "Skip Existing in Solr9:  $SKIP_EXISTING_IN_SOLR9"
+
+if [[ "$SKIP_EXISTING_IN_SOLR9" == "1" ]]; then
+  echo "SOLR9_URL:               $SOLR9_URL"
+  echo "SOLR9_AUTH:              ${SOLR9_AUTH:+********}"
+  echo "SOLR9_TERMS_BATCH:       $SOLR9_TERMS_BATCH"
+  echo "SOLR9_TIMEOUT_SECONDS:   $SOLR9_TIMEOUT_SECONDS"
+fi
+
 echo
 
 CONTAINER_OVERRIDES=$(jq -n \
-  --arg S3_INPUT_FILE "$MANIFEST_S3_URI" \
+  --arg MANIFEST_S3_URI "$MANIFEST_S3_URI" \
   --arg COLLECTION "$COLLECTION" \
   --arg ENVIRONMENT "$ENVIRONMENT" \
   --arg BASE_URL "$BASE_URL" \
+  --arg APS_BASE_URL "$BASE_URL" \
   --arg ADMIN_USERNAME "$ADMIN_USERNAME" \
   --arg ADMIN_PASSWORD "$ADMIN_PASSWORD" \
   --arg BATCH_SIZE "$BATCH_SIZE" \
   --arg MAX_HTTP_RETRIES "$MAX_HTTP_RETRIES" \
   --arg DRY_RUN "$DRY_RUN" \
+  --arg CONTAINER_DRY_RUN "$DRY_RUN" \
   --arg PER_ID_ON_BATCH_FAILURE "$PER_ID_ON_BATCH_FAILURE" \
   --arg SKIP_EXISTING_IN_SOLR9 "$SKIP_EXISTING_IN_SOLR9" \
-  '{
-    environment: [
-      {name: "S3_INPUT_FILE", value: $S3_INPUT_FILE},
-      {name: "COLLECTION", value: $COLLECTION},
-      {name: "ENVIRONMENT", value: $ENVIRONMENT},
-      {name: "BASE_URL", value: $BASE_URL},
-      {name: "ADMIN_USERNAME", value: $ADMIN_USERNAME},
-      {name: "ADMIN_PASSWORD", value: $ADMIN_PASSWORD},
-      {name: "BATCH_SIZE", value: $BATCH_SIZE},
-      {name: "MAX_HTTP_RETRIES", value: $MAX_HTTP_RETRIES},
-      {name: "DRY_RUN", value: $DRY_RUN},
-      {name: "PER_ID_ON_BATCH_FAILURE", value: $PER_ID_ON_BATCH_FAILURE},
-      {name: "SKIP_EXISTING_IN_SOLR9", value: $SKIP_EXISTING_IN_SOLR9}
-    ]
+  --arg SOLR9_URL "$SOLR9_URL" \
+  --arg SOLR9_AUTH "$SOLR9_AUTH" \
+  --arg SOLR9_TERMS_BATCH "$SOLR9_TERMS_BATCH" \
+  --arg SOLR9_TIMEOUT_SECONDS "$SOLR9_TIMEOUT_SECONDS" \
+  '
+  {
+    environment: (
+      [
+        {name: "MANIFEST_S3_URI", value: $MANIFEST_S3_URI},
+        {name: "COLLECTION", value: $COLLECTION},
+        {name: "ENVIRONMENT", value: $ENVIRONMENT},
+        {name: "BASE_URL", value: $BASE_URL},
+        {name: "APS_BASE_URL", value: $APS_BASE_URL},
+        {name: "ADMIN_USERNAME", value: $ADMIN_USERNAME},
+        {name: "ADMIN_PASSWORD", value: $ADMIN_PASSWORD},
+        {name: "BATCH_SIZE", value: $BATCH_SIZE},
+        {name: "MAX_HTTP_RETRIES", value: $MAX_HTTP_RETRIES},
+        {name: "DRY_RUN", value: $DRY_RUN},
+        {name: "CONTAINER_DRY_RUN", value: $CONTAINER_DRY_RUN},
+        {name: "PER_ID_ON_BATCH_FAILURE", value: $PER_ID_ON_BATCH_FAILURE},
+        {name: "SKIP_EXISTING_IN_SOLR9", value: $SKIP_EXISTING_IN_SOLR9}
+      ]
+      +
+      (
+        if $SKIP_EXISTING_IN_SOLR9 == "1" then
+          [
+            {name: "SOLR9_URL", value: $SOLR9_URL},
+            {name: "SOLR9_TERMS_BATCH", value: $SOLR9_TERMS_BATCH},
+            {name: "SOLR9_TIMEOUT_SECONDS", value: $SOLR9_TIMEOUT_SECONDS}
+          ]
+        else
+          []
+        end
+      )
+      +
+      (
+        if $SKIP_EXISTING_IN_SOLR9 == "1" and $SOLR9_AUTH != "" then
+          [
+            {name: "SOLR9_AUTH", value: $SOLR9_AUTH}
+          ]
+        else
+          []
+        end
+      )
+    )
   }')
+
+SAFE_CONTAINER_OVERRIDES=$(echo "$CONTAINER_OVERRIDES" | jq '
+  .environment |= map(
+    if .name == "ADMIN_PASSWORD" or .name == "SOLR9_AUTH" then
+      .value = "********"
+    else
+      .
+    end
+  )
+')
+
+echo -e "${GREY}Container overrides:${RESET}"
+echo "$SAFE_CONTAINER_OVERRIDES" | jq .
+echo
+
+echo -e "${BOLD}${GREEN}🚀 Submitting AWS Batch job${RESET}"
+echo
 
 SUBMIT_OUTPUT=$(aws batch submit-job \
   --region "$AWS_REGION" \
@@ -301,11 +504,19 @@ JOB_ID=$(echo "$SUBMIT_OUTPUT" | jq -r '.jobId')
 SUBMITTED_JOB_NAME=$(echo "$SUBMIT_OUTPUT" | jq -r '.jobName')
 
 echo
-echo "✅ Job submitted"
+echo -e "${BOLD}${GREEN}✅ Job submitted${RESET}"
 echo "Job Name: $SUBMITTED_JOB_NAME"
 echo "Job ID:   $JOB_ID"
 echo
 
+echo -e "${BOLD}${CYAN}🔎 Verify MANIFEST_S3_URI environment variable${RESET}"
+aws batch describe-jobs \
+  --region "$AWS_REGION" \
+  --jobs "$JOB_ID" \
+  --query 'jobs[0].container.environment[?name==`MANIFEST_S3_URI`]' \
+  --output table
+
+echo
 echo "🔎 Check job info:"
 echo "aws batch describe-jobs \\"
 echo "  --region \"$AWS_REGION\" \\"

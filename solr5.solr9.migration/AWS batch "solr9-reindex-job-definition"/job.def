@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+GREY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+print_valid_values() {
+  local values=("$@")
+
+  if [[ "${#values[@]}" -gt 0 ]]; then
+    echo -e "${GREY}  Valid values: ${values[*]}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+  read -r value
+
+  echo "${value:-$default}"
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="$3"
+  shift 3
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values "${valid_values[@]}"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo -e "${RED}❌ Invalid value. Valid values are: ${valid_values[*]}${RESET}" >&2
+  done
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values yes no
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    case "$value" in
+      y|yes|Y|YES)
+        echo "yes"
+        return 0
+        ;;
+      n|no|N|NO)
+        echo "no"
+        return 0
+        ;;
+      *)
+        echo -e "${RED}❌ Invalid value. Use yes or no.${RESET}" >&2
+        ;;
+    esac
+  done
+}
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo -e "${RED}❌ jq is required.${RESET}"
+  echo "Install with:"
+  echo "  brew install jq"
+  exit 1
+fi
+
+echo
+echo -e "${BOLD}${CYAN}📦 AWS Batch Job Definitions Browser${RESET}"
+echo -e "${GREY}  Lists AWS Batch job definitions, revisions, image, status, and platform details.${RESET}"
+echo
+
+REGION=$(prompt_value \
+  "Enter AWS region" \
+  "us-east-1" \
+  "AWS region used for AWS Batch commands.")
+
+STATUS_SCOPE=$(prompt_valid_value \
+  "List job definitions by status" \
+  "active" \
+  "ACTIVE definitions are usable for new jobs. INACTIVE definitions are old/deregistered revisions." \
+  active inactive all)
+
+NAME_FILTER=$(prompt_value \
+  "Filter job definition name contains" \
+  "solr9" \
+  "Use a partial name filter. Press ENTER to keep default, or type all to show everything.")
+
+LATEST_ONLY=$(prompt_yes_no \
+  "Show latest revision only per job definition name?" \
+  "no" \
+  "yes collapses multiple revisions and shows only the highest revision per job definition name.")
+
+SHOW_ARNS=$(prompt_yes_no \
+  "Show full ARNs?" \
+  "no" \
+  "yes prints full jobDefinitionArn values after the table.")
+
+TMP_FILES=()
+
+cleanup() {
+  for f in "${TMP_FILES[@]:-}"; do
+    [[ -f "$f" ]] && rm -f "$f"
+  done
+}
+
+trap cleanup EXIT
+
+fetch_status() {
+  local status="$1"
+  local tmp_file
+
+  tmp_file=$(mktemp)
+  TMP_FILES+=("$tmp_file")
+
+  aws batch describe-job-definitions \
+    --region "$REGION" \
+    --status "$status" \
+    --output json > "$tmp_file"
+
+  echo "$tmp_file"
+}
+
+FILES=()
+
+case "$STATUS_SCOPE" in
+  active)
+    FILES+=("$(fetch_status ACTIVE)")
+    ;;
+  inactive)
+    FILES+=("$(fetch_status INACTIVE)")
+    ;;
+  all)
+    FILES+=("$(fetch_status ACTIVE)")
+    FILES+=("$(fetch_status INACTIVE)")
+    ;;
+esac
+
+COMBINED_JSON=$(jq -s '
+  {
+    jobDefinitions: (
+      map(.jobDefinitions // [])
+      | add
+    )
+  }
+' "${FILES[@]}")
+
+if [[ "$NAME_FILTER" == "all" ]]; then
+  NAME_FILTER=""
+fi
+
+FILTERED_JSON=$(echo "$COMBINED_JSON" | jq \
+  --arg name_filter "$NAME_FILTER" \
+  '
+  .jobDefinitions |= (
+    if $name_filter == "" then
+      .
+    else
+      map(select(.jobDefinitionName | contains($name_filter)))
+    end
+  )
+  ')
+
+if [[ "$LATEST_ONLY" == "yes" ]]; then
+  FILTERED_JSON=$(echo "$FILTERED_JSON" | jq '
+    .jobDefinitions |= (
+      group_by(.jobDefinitionName)
+      | map(max_by(.revision))
+    )
+  ')
+fi
+
+COUNT=$(echo "$FILTERED_JSON" | jq '.jobDefinitions | length')
+
+echo
+echo -e "${BOLD}${CYAN}🔎 Listing AWS Batch job definitions${RESET}"
+echo "Region:       $REGION"
+echo "Status Scope: $STATUS_SCOPE"
+echo "Name Filter:  ${NAME_FILTER:-<none>}"
+echo "Latest Only:  $LATEST_ONLY"
+echo "Count:        $COUNT"
+echo
+
+if [[ "$COUNT" -eq 0 ]]; then
+  echo -e "${YELLOW}⚠️  No job definitions found.${RESET}"
+  exit 0
+fi
+
+echo -e "${GREY}$(printf '%-36s %-8s %-10s %-10s %-14s %-12s %s' \
+  "NAME" "REV" "STATUS" "TYPE" "PLATFORM" "CPU/MEM" "IMAGE")${RESET}"
+
+echo -e "${GREY}$(printf '%-36s %-8s %-10s %-10s %-14s %-12s %s' \
+  "----" "---" "------" "----" "--------" "-------" "-----")${RESET}"
+
+echo "$FILTERED_JSON" | jq -r '
+  .jobDefinitions
+  | sort_by(.jobDefinitionName, .revision)
+  | .[]
+  | {
+      name: .jobDefinitionName,
+      revision: .revision,
+      status: .status,
+      type: (.type // "n/a"),
+      platform: ((.platformCapabilities // ["n/a"]) | join(",")),
+      image: (.containerProperties.image // "n/a"),
+      vcpus: (
+        if .containerProperties.vcpus then
+          (.containerProperties.vcpus | tostring)
+        else
+          (
+            .containerProperties.resourceRequirements // []
+            | map(select(.type == "VCPU") | .value)
+            | first // "n/a"
+          )
+        end
+      ),
+      memory: (
+        if .containerProperties.memory then
+          (.containerProperties.memory | tostring)
+        else
+          (
+            .containerProperties.resourceRequirements // []
+            | map(select(.type == "MEMORY") | .value)
+            | first // "n/a"
+          )
+        end
+      )
+    }
+  | [
+      .name,
+      (.revision | tostring),
+      .status,
+      .type,
+      .platform,
+      (.vcpus + "/" + .memory),
+      .image
+    ]
+  | @tsv
+' | while IFS=$'\t' read -r NAME REV STATUS TYPE PLATFORM CPU_MEM IMAGE; do
+  SHORT_IMAGE="$IMAGE"
+
+  if [[ "$SHORT_IMAGE" == *"/"* ]]; then
+    SHORT_IMAGE="${SHORT_IMAGE##*/}"
+  fi
+
+  printf "${GREY}%-36s %-8s %-10s %-10s %-14s %-12s %s${RESET}\n" \
+    "$NAME" "$REV" "$STATUS" "$TYPE" "$PLATFORM" "$CPU_MEM" "$SHORT_IMAGE"
+done
+
+if [[ "$SHOW_ARNS" == "yes" ]]; then
+  echo
+  echo -e "${BOLD}${CYAN}🔗 Job Definition ARNs${RESET}"
+  echo
+
+  echo "$FILTERED_JSON" | jq -r '
+    .jobDefinitions
+    | sort_by(.jobDefinitionName, .revision)
+    | .[]
+    | "- " + .jobDefinitionName + ":" + (.revision | tostring) + " → " + .jobDefinitionArn
+  '
+fi
+
+echo
+echo -e "${BOLD}${GREEN}✅ Done${RESET}"

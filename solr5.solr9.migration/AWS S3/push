@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BUCKET="solr9-ids-for-indexing"
+DOWNLOADS_DIR="${HOME}/Downloads"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+GREY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+print_valid_values() {
+  local values=("$@")
+
+  if [[ "${#values[@]}" -gt 0 ]]; then
+    echo -e "${GREY}  Valid values: ${values[*]}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+  read -r value
+
+  echo "${value:-$default}"
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="$3"
+  shift 3
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values "${valid_values[@]}"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo -e "${RED}❌ Invalid value. Valid values are: ${valid_values[*]}${RESET}" >&2
+  done
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values yes no
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    case "$value" in
+      y|yes|Y|YES)
+        echo "yes"
+        return 0
+        ;;
+      n|no|N|NO)
+        echo "no"
+        return 0
+        ;;
+      *)
+        echo -e "${RED}❌ Invalid value. Use yes or no.${RESET}" >&2
+        ;;
+    esac
+  done
+}
+
+human_size() {
+  local bytes="$1"
+
+  awk -v bytes="$bytes" '
+    function human(x) {
+      split("B KB MB GB TB", units, " ")
+      i = 1
+      while (x >= 1024 && i < 5) {
+        x = x / 1024
+        i++
+      }
+      return sprintf("%.2f %s", x, units[i])
+    }
+    BEGIN {
+      print human(bytes)
+    }
+  '
+}
+
+file_size_bytes() {
+  local file="$1"
+
+  if stat -f "%z" "$file" >/dev/null 2>&1; then
+    stat -f "%z" "$file"
+  else
+    stat -c "%s" "$file"
+  fi
+}
+
+file_modified_date() {
+  local file="$1"
+
+  if stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$file" >/dev/null 2>&1; then
+    stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$file"
+  else
+    stat -c "%y" "$file" | cut -d'.' -f1
+  fi
+}
+
+list_jsonl_files_newest_first() {
+  find "$DOWNLOADS_DIR" -maxdepth 1 -type f -name "*.jsonl" -print0 \
+    | xargs -0 stat -f "%m %N" 2>/dev/null \
+    | sort -rn \
+    | cut -d' ' -f2-
+}
+
+list_jsonl_files_newest_first_linux_fallback() {
+  find "$DOWNLOADS_DIR" -maxdepth 1 -type f -name "*.jsonl" -printf "%T@ %p\n" 2>/dev/null \
+    | sort -rn \
+    | cut -d' ' -f2-
+}
+
+pick_jsonl_file() {
+  local files=()
+  local file
+  local pick
+
+  while IFS= read -r file; do
+    [[ -n "$file" ]] && files+=("$file")
+  done < <(list_jsonl_files_newest_first || true)
+
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    while IFS= read -r file; do
+      [[ -n "$file" ]] && files+=("$file")
+    done < <(list_jsonl_files_newest_first_linux_fallback || true)
+  fi
+
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    echo -e "${RED}❌ No .jsonl files found in:${RESET}" >&2
+    echo "$DOWNLOADS_DIR" >&2
+    exit 1
+  fi
+
+  print_file_list() {
+    local index=1
+    local modified
+    local size_bytes
+    local display_size
+    local file_name
+
+    echo >&2
+    echo -e "${BOLD}${CYAN}📄 Available .jsonl files in ~/Downloads${RESET}" >&2
+    echo -e "${GREY}  Sorted by modified date, newest first.${RESET}" >&2
+    echo >&2
+
+    echo -e "${GREY}$(printf '%-5s %-20s %-12s %s' "NUM" "MODIFIED" "SIZE" "FILE")${RESET}" >&2
+    echo -e "${GREY}$(printf '%-5s %-20s %-12s %s' "---" "--------" "----" "----")${RESET}" >&2
+
+    for file in "${files[@]}"; do
+      file_name="$(basename "$file")"
+      modified="$(file_modified_date "$file")"
+      size_bytes="$(file_size_bytes "$file")"
+      display_size="$(human_size "$size_bytes")"
+
+      echo -e "${GREY}$(printf '%-5s %-20s %-12s %s' "$index" "$modified" "$display_size" "$file_name")${RESET}" >&2
+
+      index=$((index + 1))
+    done
+
+    echo >&2
+  }
+
+  while true; do
+    print_file_list
+
+    print_help "Pick the local .jsonl file to upload to S3."
+    echo -ne "${BOLD}Pick file number${RESET} [1-${#files[@]}]: " >&2
+    read -r pick
+
+    if [[ "$pick" =~ ^[0-9]+$ ]] && \
+       [[ "$pick" -ge 1 ]] && \
+       [[ "$pick" -le "${#files[@]}" ]]; then
+      echo "${files[$((pick - 1))]}"
+      return 0
+    fi
+
+    echo -e "${RED}❌ Invalid selection. Enter a number between 1 and ${#files[@]}.${RESET}" >&2
+  done
+}
+
+echo
+echo -e "${BOLD}${CYAN}🪣 Upload local JSONL manifest to S3${RESET}"
+echo -e "${GREY}  Source folder: ${DOWNLOADS_DIR}${RESET}"
+echo -e "${GREY}  Bucket:        ${BUCKET}${RESET}"
+echo
+
+REGION=$(prompt_value \
+  "Enter AWS region" \
+  "us-east-1" \
+  "AWS region used for S3 commands.")
+
+LOCAL_FILE=$(pick_jsonl_file)
+
+if [[ ! -f "$LOCAL_FILE" ]]; then
+  echo -e "${RED}❌ Selected file does not exist:${RESET}" >&2
+  echo "$LOCAL_FILE" >&2
+  exit 1
+fi
+
+LOCAL_FILE_NAME="$(basename "$LOCAL_FILE")"
+
+COLLECTION=$(prompt_valid_value \
+  "Enter collection" \
+  "customers" \
+  "Collection path segment under the bucket." \
+  customers agreements products reservations reservationproducts)
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "dev" \
+  "Environment path segment under the collection." \
+  dev stage prod)
+
+S3_FOLDER=$(prompt_valid_value \
+  "Enter S3 folder" \
+  "input" \
+  "Lifecycle folder where the file will be uploaded." \
+  input output invalid replay summary skipped)
+
+S3_KEY="${COLLECTION}/${ENVIRONMENT}/${S3_FOLDER}/${LOCAL_FILE_NAME}"
+S3_URI="s3://${BUCKET}/${S3_KEY}"
+
+echo
+echo -e "${BOLD}${CYAN}🔎 Upload summary${RESET}"
+echo "Region:      $REGION"
+echo "Bucket:      $BUCKET"
+echo "Collection:  $COLLECTION"
+echo "Environment: $ENVIRONMENT"
+echo "Folder:      $S3_FOLDER"
+echo "Local File:  $LOCAL_FILE"
+echo "S3 URI:      $S3_URI"
+echo
+
+if aws s3api head-object \
+  --region "$REGION" \
+  --bucket "$BUCKET" \
+  --key "$S3_KEY" >/dev/null 2>&1; then
+
+  echo -e "${YELLOW}⚠️  File already exists in S3:${RESET}"
+  echo "$S3_URI"
+  echo
+
+  OVERWRITE=$(prompt_yes_no \
+    "Overwrite existing S3 object?" \
+    "no" \
+    "yes replaces the existing object. no exits without uploading.")
+
+  if [[ "$OVERWRITE" != "yes" ]]; then
+    echo
+    echo -e "${YELLOW}⚠️  Upload cancelled.${RESET}"
+    exit 0
+  fi
+fi
+
+echo
+echo -e "${BOLD}${GREEN}🚀 Uploading file to S3${RESET}"
+echo
+
+aws s3 cp "$LOCAL_FILE" "$S3_URI" \
+  --region "$REGION"
+
+echo
+echo -e "${BOLD}${GREEN}✅ Upload complete${RESET}"
+echo "S3 URI: $S3_URI"
