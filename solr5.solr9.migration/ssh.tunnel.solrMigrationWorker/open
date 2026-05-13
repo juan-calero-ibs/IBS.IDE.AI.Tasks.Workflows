@@ -1,0 +1,11 @@
+ssh -i ~/awsPEMs/tc-batch-solr9.pem \
+  -N \
+  -o ExitOnForwardFailure=yes \
+  -L 28080:localhost:8080 \
+  -R 9042:127.0.0.1:9042 \
+  -R 11211:127.0.0.1:11211 \
+  -R 9010:127.0.0.1:9010 \
+  -R 9011:127.0.0.1:9011 \
+  -R 9012:127.0.0.1:9012 \
+  -R 2181:127.0.0.1:2181 \
+  ec2-user@aws-solrMigrationWorker

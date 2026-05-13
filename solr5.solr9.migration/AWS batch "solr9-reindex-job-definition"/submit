@@ -306,10 +306,11 @@ MANIFEST_S3_URI="s3://${BUCKET}/${S3_PREFIX}${S3_FILE}"
 
 BASE_URL=$(prompt_value \
   "Enter BASE_URL" \
-  "http://localhost:28080" \
+  "http://172.31.59.198:8080" \
   "APS solrMigrationWorker URL.
-  http://localhost:18080 = container solrMigrationWorker.
-  http://localhost:28080 = EC2 node solrMigrationWorker.")
+  http://172.31.59.198:8080 = direct EC2 node private IP access to solrMigrationWorker.
+  To get the EC2 private IP from the EC2 node, run after ssh-ing into the node:
+    hostname -I | awk '{print \$1}'")
 
 ADMIN_USERNAME=$(prompt_value \
   "Enter ADMIN_USERNAME" \
