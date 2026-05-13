@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+FUNCTION_NAME="solr9-reindex-s3-trigger"
+
+read -r -p "Enter AWS region [us-east-1]: " REGION
+REGION=${REGION:-us-east-1}
+
+echo
+echo "🔎 Describing Lambda function"
+echo "Region:   $REGION"
+echo "Function: $FUNCTION_NAME"
+echo
+
+LAMBDA_JSON=$(aws lambda get-function \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --output json)
+
+echo "📋 Lambda summary"
+echo "------------------------------------------------------------"
+
+echo "$LAMBDA_JSON" | jq '
+  .Configuration
+  | {
+      FunctionName,
+      FunctionArn,
+      Runtime,
+      Handler,
+      Role,
+      CodeSize,
+      Description,
+      Timeout,
+      MemorySize,
+      LastModified,
+      State,
+      StateReason,
+      LastUpdateStatus,
+      LastUpdateStatusReason,
+      PackageType,
+      Architectures,
+      EphemeralStorage,
+      LoggingConfig
+    }
+'
+
+echo
+echo "🌎 Environment variables"
+echo "------------------------------------------------------------"
+
+echo "$LAMBDA_JSON" | jq '
+  .Configuration.Environment.Variables // {}
+  | if has("ADMIN_PASSWORD") then .ADMIN_PASSWORD = "********" else . end
+'
+
+echo
+echo "📦 Code information"
+echo "------------------------------------------------------------"
+
+echo "$LAMBDA_JSON" | jq '
+  .Code
+  | {
+      RepositoryType,
+      ImageUri,
+      ResolvedImageUri,
+      Location
+    }
+'
+
+echo
+echo "📊 Table view"
+echo "------------------------------------------------------------"
+
+aws lambda get-function-configuration \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --query '{
+    FunctionName:FunctionName,
+    Runtime:Runtime,
+    Handler:Handler,
+    Timeout:Timeout,
+    MemorySize:MemorySize,
+    LastModified:LastModified,
+    State:State,
+    LastUpdateStatus:LastUpdateStatus,
+    Role:Role
+  }' \
+  --output table
+
+echo
+echo "✅ Done"

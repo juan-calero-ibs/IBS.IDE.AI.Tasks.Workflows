@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+S3_URI="${1:-}"
+
+if [[ -z "$S3_URI" ]]; then
+  read -r -p "Enter full S3 file path: " S3_URI
+fi
+
+if [[ -z "$S3_URI" ]]; then
+  echo "❌ S3 path is required."
+  exit 1
+fi
+
+if [[ ! "$S3_URI" =~ ^s3://([^/]+)/(.+)$ ]]; then
+  echo "❌ Invalid S3 URI."
+  echo "Expected format:"
+  echo "  s3://bucket-name/path/to/file"
+  exit 1
+fi
+
+BUCKET="${BASH_REMATCH[1]}"
+KEY="${BASH_REMATCH[2]}"
+
+echo
+echo "🔎 Checking file..."
+echo "Bucket: $BUCKET"
+echo "Key:    $KEY"
+echo
+
+if ! aws s3api head-object \
+  --bucket "$BUCKET" \
+  --key "$KEY" \
+  >/tmp/s3_head_object.json 2>/tmp/s3_head_object_error.log; then
+
+  echo "❌ File not found or access denied:"
+  echo "$S3_URI"
+  echo
+  cat /tmp/s3_head_object_error.log
+  exit 1
+fi
+
+SIZE_BYTES=$(aws s3api head-object \
+  --bucket "$BUCKET" \
+  --key "$KEY" \
+  --query 'ContentLength' \
+  --output text)
+
+LAST_MODIFIED=$(aws s3api head-object \
+  --bucket "$BUCKET" \
+  --key "$KEY" \
+  --query 'LastModified' \
+  --output text)
+
+echo "✅ File found"
+echo "Size:          ${SIZE_BYTES} bytes"
+echo "Last Modified: $LAST_MODIFIED"
+echo
+
+aws s3 cp "$S3_URI" - | less

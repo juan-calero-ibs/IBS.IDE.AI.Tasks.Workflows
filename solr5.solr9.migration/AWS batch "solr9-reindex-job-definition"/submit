@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  shift 2
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo "❌ Invalid value. Valid values are: ${valid_values[*]}" >&2
+  done
+}
+
+prompt_positive_int() {
+  local prompt="$1"
+  local default="$2"
+  local value
+
+  while true; do
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Invalid value. Please enter a positive number." >&2
+  done
+}
+
+prompt_secret_value() {
+  local prompt="$1"
+  local value
+
+  while true; do
+    read -r -s -p "$prompt: " value
+    echo >&2
+
+    if [[ -n "$value" ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Value is required." >&2
+  done
+}
+
+human_size() {
+  local bytes="$1"
+
+  awk -v bytes="$bytes" '
+    function human(x) {
+      split("B KB MB GB TB", units, " ")
+      i = 1
+      while (x >= 1024 && i < 5) {
+        x = x / 1024
+        i++
+      }
+      return sprintf("%.2f %s", x, units[i])
+    }
+    BEGIN {
+      print human(bytes)
+    }
+  '
+}
+
+prompt_s3_file() {
+  local region="$1"
+  local bucket="$2"
+  local prefix="$3"
+  local file_scope="$4"
+
+  local selected_file
+  local files=()
+  local rows=()
+  local line
+  local last_modified
+  local size
+  local key
+  local file_name
+  local display_size
+  local today_utc
+  local query
+
+  today_utc=$(date -u +"%Y-%m-%d")
+
+  if [[ "$file_scope" == "today" ]]; then
+    query="Contents[?Size>\`0\` && starts_with(LastModified, \`${today_utc}\`)].[LastModified,Size,Key]"
+  else
+    query="Contents[?Size>\`0\`].[LastModified,Size,Key]"
+  fi
+
+  mapfile -t rows < <(
+    aws s3api list-objects-v2 \
+      --region "$region" \
+      --bucket "$bucket" \
+      --prefix "$prefix" \
+      --query "$query" \
+      --output text 2>/dev/null \
+    | awk 'NF'
+  )
+
+  if [[ "${#rows[@]}" -eq 0 ]]; then
+    echo "❌ No files found in s3://${bucket}/${prefix}" >&2
+
+    if [[ "$file_scope" == "today" ]]; then
+      echo "Tip: choose 'all' to list all files." >&2
+    fi
+
+    exit 1
+  fi
+
+  echo >&2
+  echo "📄 Available files in s3://${bucket}/${prefix}" >&2
+
+  if [[ "$file_scope" == "today" ]]; then
+    echo "Date Filter: ${today_utc} UTC" >&2
+  fi
+
+  echo >&2
+  printf '%-30s %-12s %s\n' "LAST MODIFIED" "SIZE" "FILE" >&2
+  printf '%-30s %-12s %s\n' "-------------" "----" "----" >&2
+
+  for line in "${rows[@]}"; do
+    last_modified=$(echo "$line" | awk '{print $1}')
+    size=$(echo "$line" | awk '{print $2}')
+    key=$(echo "$line" | awk '{$1=""; $2=""; sub(/^  */, ""); print}')
+
+    file_name="${key#${prefix}}"
+    display_size=$(human_size "$size")
+
+    files+=("$file_name")
+
+    printf '%-30s %-12s %s\n' "$last_modified" "$display_size" "$file_name" >&2
+  done
+
+  echo >&2
+
+  while true; do
+    read -r -p "Enter S3 file name: " selected_file
+
+    for file in "${files[@]}"; do
+      if [[ "$selected_file" == "$file" ]]; then
+        echo "$selected_file"
+        return 0
+      fi
+    done
+
+    echo "❌ Invalid file. Valid files are:" >&2
+    printf ' - %s\n' "${files[@]}" >&2
+  done
+}
+
+read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
+AWS_REGION=${AWS_REGION:-us-east-1}
+
+read -r -p "Enter AWS Batch job queue [solr9-reindex-job-queue]: " JOB_QUEUE
+JOB_QUEUE=${JOB_QUEUE:-solr9-reindex-job-queue}
+
+read -r -p "Enter AWS Batch job definition [solr9-reindex-job-definition]: " JOB_DEFINITION
+JOB_DEFINITION=${JOB_DEFINITION:-solr9-reindex-job-definition}
+
+read -r -p "Enter S3 bucket [solr9-ids-for-indexing]: " BUCKET
+BUCKET=${BUCKET:-solr9-ids-for-indexing}
+
+COLLECTION=$(prompt_valid_value \
+  "Enter collection" \
+  "customers" \
+  customers agreements products reservations reservationproducts)
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "dev" \
+  dev stage prod)
+
+S3_FOLDER=$(prompt_valid_value \
+  "Enter S3 folder" \
+  "input" \
+  input output invalid replay summary)
+
+FILE_SCOPE=$(prompt_valid_value \
+  "List today's files or all files?" \
+  "today" \
+  today all)
+
+S3_PREFIX="${COLLECTION}/${ENVIRONMENT}/${S3_FOLDER}/"
+
+S3_FILE=$(prompt_s3_file \
+  "$AWS_REGION" \
+  "$BUCKET" \
+  "$S3_PREFIX" \
+  "$FILE_SCOPE")
+
+MANIFEST_S3_URI="s3://${BUCKET}/${S3_PREFIX}${S3_FILE}"
+
+read -r -p "Enter BASE_URL [http://localhost:28080]: " BASE_URL
+BASE_URL=${BASE_URL:-http://localhost:28080}
+
+read -r -p "Enter ADMIN_USERNAME [admin]: " ADMIN_USERNAME
+ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+
+ADMIN_PASSWORD=$(prompt_secret_value "Enter ADMIN_PASSWORD")
+
+BATCH_SIZE=$(prompt_positive_int \
+  "Enter batch size" \
+  "100")
+
+MAX_HTTP_RETRIES=$(prompt_valid_value \
+  "Enter max HTTP retries" \
+  "0" \
+  0 1 2 3)
+
+DRY_RUN=$(prompt_valid_value \
+  "Dry run?" \
+  "0" \
+  0 1)
+
+PER_ID_ON_BATCH_FAILURE=$(prompt_valid_value \
+  "Enable per-id fallback on batch failure?" \
+  "1" \
+  0 1)
+
+SKIP_EXISTING_IN_SOLR9=$(prompt_valid_value \
+  "Skip existing docs in Solr9?" \
+  "0" \
+  0 1)
+
+TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+JOB_NAME="solr9-${COLLECTION}-reindex-${ENVIRONMENT}-${TIMESTAMP}"
+
+echo
+echo "🚀 Submitting AWS Batch job"
+echo "Region:                  $AWS_REGION"
+echo "Job Queue:               $JOB_QUEUE"
+echo "Job Definition:          $JOB_DEFINITION"
+echo "Job Name:                $JOB_NAME"
+echo "Bucket:                  $BUCKET"
+echo "Collection:              $COLLECTION"
+echo "Environment:             $ENVIRONMENT"
+echo "S3 Folder:               $S3_FOLDER"
+echo "Manifest S3 URI:         $MANIFEST_S3_URI"
+echo "Base URL:                $BASE_URL"
+echo "Batch Size:              $BATCH_SIZE"
+echo "Max HTTP Retries:        $MAX_HTTP_RETRIES"
+echo "Dry Run:                 $DRY_RUN"
+echo "Per-ID Batch Fallback:   $PER_ID_ON_BATCH_FAILURE"
+echo "Skip Existing in Solr9:  $SKIP_EXISTING_IN_SOLR9"
+echo
+
+CONTAINER_OVERRIDES=$(jq -n \
+  --arg S3_INPUT_FILE "$MANIFEST_S3_URI" \
+  --arg COLLECTION "$COLLECTION" \
+  --arg ENVIRONMENT "$ENVIRONMENT" \
+  --arg BASE_URL "$BASE_URL" \
+  --arg ADMIN_USERNAME "$ADMIN_USERNAME" \
+  --arg ADMIN_PASSWORD "$ADMIN_PASSWORD" \
+  --arg BATCH_SIZE "$BATCH_SIZE" \
+  --arg MAX_HTTP_RETRIES "$MAX_HTTP_RETRIES" \
+  --arg DRY_RUN "$DRY_RUN" \
+  --arg PER_ID_ON_BATCH_FAILURE "$PER_ID_ON_BATCH_FAILURE" \
+  --arg SKIP_EXISTING_IN_SOLR9 "$SKIP_EXISTING_IN_SOLR9" \
+  '{
+    environment: [
+      {name: "S3_INPUT_FILE", value: $S3_INPUT_FILE},
+      {name: "COLLECTION", value: $COLLECTION},
+      {name: "ENVIRONMENT", value: $ENVIRONMENT},
+      {name: "BASE_URL", value: $BASE_URL},
+      {name: "ADMIN_USERNAME", value: $ADMIN_USERNAME},
+      {name: "ADMIN_PASSWORD", value: $ADMIN_PASSWORD},
+      {name: "BATCH_SIZE", value: $BATCH_SIZE},
+      {name: "MAX_HTTP_RETRIES", value: $MAX_HTTP_RETRIES},
+      {name: "DRY_RUN", value: $DRY_RUN},
+      {name: "PER_ID_ON_BATCH_FAILURE", value: $PER_ID_ON_BATCH_FAILURE},
+      {name: "SKIP_EXISTING_IN_SOLR9", value: $SKIP_EXISTING_IN_SOLR9}
+    ]
+  }')
+
+SUBMIT_OUTPUT=$(aws batch submit-job \
+  --region "$AWS_REGION" \
+  --job-name "$JOB_NAME" \
+  --job-queue "$JOB_QUEUE" \
+  --job-definition "$JOB_DEFINITION" \
+  --container-overrides "$CONTAINER_OVERRIDES" \
+  --output json)
+
+JOB_ID=$(echo "$SUBMIT_OUTPUT" | jq -r '.jobId')
+SUBMITTED_JOB_NAME=$(echo "$SUBMIT_OUTPUT" | jq -r '.jobName')
+
+echo
+echo "✅ Job submitted"
+echo "Job Name: $SUBMITTED_JOB_NAME"
+echo "Job ID:   $JOB_ID"
+echo
+
+echo "🔎 Check job info:"
+echo "aws batch describe-jobs \\"
+echo "  --region \"$AWS_REGION\" \\"
+echo "  --jobs \"$JOB_ID\" \\"
+echo "  --output table"

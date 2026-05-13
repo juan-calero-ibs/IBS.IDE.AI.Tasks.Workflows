@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+FUNCTION_NAME="solr9-reindex-s3-trigger"
+JOB_QUEUE="solr9-reindex-job-queue"
+MANIFEST_BUCKET_NAME="solr9-ids-for-indexing"
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local value
+
+  read -r -p "$prompt [$default]: " value
+  echo "${value:-$default}"
+}
+
+prompt_required_value() {
+  local prompt="$1"
+  local default="$2"
+  local value
+
+  while true; do
+    value=$(prompt_value "$prompt" "$default")
+
+    if [[ -n "$value" && "$value" != "null" ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Value is required." >&2
+  done
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  shift 2
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    value=$(prompt_value "$prompt" "$default")
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo "❌ Invalid value. Valid values are: ${valid_values[*]}" >&2
+  done
+}
+
+prompt_positive_int() {
+  local prompt="$1"
+  local default="$2"
+  local value
+
+  while true; do
+    value=$(prompt_value "$prompt" "$default")
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Invalid value. Please enter a positive number." >&2
+  done
+}
+
+read -r -p "Enter AWS region [us-east-1]: " REGION
+REGION=${REGION:-us-east-1}
+
+echo
+echo "🔎 Reading current Lambda environment first"
+echo "Region:   $REGION"
+echo "Function: $FUNCTION_NAME"
+echo
+
+CURRENT_CONFIG=$(aws lambda get-function-configuration \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --output json)
+
+CURRENT_ENV=$(echo "$CURRENT_CONFIG" | jq '.Environment.Variables // {}')
+
+current_var() {
+  local name="$1"
+  echo "$CURRENT_ENV" | jq -r --arg name "$name" '.[$name] // empty'
+}
+
+CURRENT_JOB_DEFINITION=$(current_var "JOB_DEFINITION")
+CURRENT_BATCH_SIZE=$(current_var "BATCH_SIZE")
+CURRENT_CONTAINER_DRY_RUN=$(current_var "CONTAINER_DRY_RUN")
+CURRENT_MAX_HTTP_RETRIES=$(current_var "MAX_HTTP_RETRIES")
+CURRENT_BASE_URL=$(current_var "BASE_URL")
+CURRENT_ADMIN_USERNAME=$(current_var "ADMIN_USERNAME")
+CURRENT_ADMIN_PASSWORD=$(current_var "ADMIN_PASSWORD")
+
+echo "✅ Current values loaded"
+echo
+
+echo "⚠️  Job Definition note:"
+echo "If the Python runner image or command changed, create/register a new AWS Batch job definition revision first."
+echo "Then enter the new revision here, for example: solr9-customers-reindex:7"
+echo
+
+JOB_DEFINITION=$(prompt_required_value \
+  "Enter JOB_DEFINITION" \
+  "${CURRENT_JOB_DEFINITION:-solr9-customers-reindex:6}")
+
+BATCH_SIZE=$(prompt_positive_int \
+  "Enter BATCH_SIZE" \
+  "${CURRENT_BATCH_SIZE:-50}")
+
+CONTAINER_DRY_RUN=$(prompt_valid_value \
+  "Enter CONTAINER_DRY_RUN" \
+  "${CURRENT_CONTAINER_DRY_RUN:-0}" \
+  0 1)
+
+MAX_HTTP_RETRIES=$(prompt_valid_value \
+  "Enter MAX_HTTP_RETRIES" \
+  "${CURRENT_MAX_HTTP_RETRIES:-0}" \
+  0 1 2 3 4 5)
+
+BASE_URL=$(prompt_required_value \
+  "Enter BASE_URL" \
+  "${CURRENT_BASE_URL:-http://localhost:18080}")
+
+ADMIN_USERNAME=$(prompt_required_value \
+  "Enter ADMIN_USERNAME" \
+  "${CURRENT_ADMIN_USERNAME:-admin}")
+
+echo
+
+if [[ -n "$CURRENT_ADMIN_PASSWORD" ]]; then
+  read -r -s -p "Enter ADMIN_PASSWORD [press ENTER to keep current]: " ADMIN_PASSWORD_INPUT
+  echo
+  ADMIN_PASSWORD="${ADMIN_PASSWORD_INPUT:-$CURRENT_ADMIN_PASSWORD}"
+else
+  while true; do
+    read -r -s -p "Enter ADMIN_PASSWORD: " ADMIN_PASSWORD
+    echo
+
+    if [[ -n "$ADMIN_PASSWORD" ]]; then
+      break
+    fi
+
+    echo "❌ ADMIN_PASSWORD is required." >&2
+  done
+fi
+
+UPDATED_ENV=$(echo "$CURRENT_ENV" | jq \
+  --arg JOB_QUEUE "$JOB_QUEUE" \
+  --arg JOB_DEFINITION "$JOB_DEFINITION" \
+  --arg BATCH_SIZE "$BATCH_SIZE" \
+  --arg CONTAINER_DRY_RUN "$CONTAINER_DRY_RUN" \
+  --arg MAX_HTTP_RETRIES "$MAX_HTTP_RETRIES" \
+  --arg MANIFEST_BUCKET_NAME "$MANIFEST_BUCKET_NAME" \
+  --arg BASE_URL "$BASE_URL" \
+  --arg ADMIN_USERNAME "$ADMIN_USERNAME" \
+  --arg ADMIN_PASSWORD "$ADMIN_PASSWORD" \
+  '
+    .JOB_QUEUE = $JOB_QUEUE
+    | .JOB_DEFINITION = $JOB_DEFINITION
+    | .BATCH_SIZE = $BATCH_SIZE
+    | .CONTAINER_DRY_RUN = $CONTAINER_DRY_RUN
+    | .MAX_HTTP_RETRIES = $MAX_HTTP_RETRIES
+    | .MANIFEST_BUCKET_NAME = $MANIFEST_BUCKET_NAME
+    | .BASE_URL = $BASE_URL
+    | .ADMIN_USERNAME = $ADMIN_USERNAME
+    | .ADMIN_PASSWORD = $ADMIN_PASSWORD
+  ')
+
+ENVIRONMENT_PAYLOAD=$(jq -n \
+  --argjson variables "$UPDATED_ENV" \
+  '{Variables: $variables}')
+
+echo
+echo "🚀 Updating Lambda environment"
+echo "Region:               $REGION"
+echo "Function:             $FUNCTION_NAME"
+echo "JOB_QUEUE:            $JOB_QUEUE"
+echo "JOB_DEFINITION:       $JOB_DEFINITION"
+echo "BATCH_SIZE:           $BATCH_SIZE"
+echo "CONTAINER_DRY_RUN:    $CONTAINER_DRY_RUN"
+echo "MAX_HTTP_RETRIES:     $MAX_HTTP_RETRIES"
+echo "MANIFEST_BUCKET_NAME: $MANIFEST_BUCKET_NAME"
+echo "BASE_URL:             $BASE_URL"
+echo "ADMIN_USERNAME:       $ADMIN_USERNAME"
+echo "ADMIN_PASSWORD:       ********"
+echo
+
+aws lambda wait function-updated \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" || true
+
+aws lambda update-function-configuration \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --environment "$ENVIRONMENT_PAYLOAD" \
+  --output table
+
+echo
+echo "⏳ Waiting for Lambda update to finish..."
+
+aws lambda wait function-updated \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME"
+
+echo
+echo "✅ Lambda environment updated"
+echo
+
+echo "🔎 Verified values"
+echo "------------------------------------------------------------"
+
+aws lambda get-function-configuration \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --query 'Environment.Variables' \
+  --output json \
+| jq '
+    .ADMIN_PASSWORD = "********"
+  '

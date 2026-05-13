@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+FUNCTION_NAME="solr9-reindex-s3-trigger"
+
+read -r -p "Enter AWS region [us-east-1]: " REGION
+REGION=${REGION:-us-east-1}
+
+read -r -p "Show logs since [15m]: " SINCE
+SINCE=${SINCE:-15m}
+
+read -r -p "Follow logs? [yes]: " FOLLOW
+FOLLOW=${FOLLOW:-yes}
+
+LOG_GROUP="/aws/lambda/${FUNCTION_NAME}"
+
+echo
+echo "📜 Tailing Lambda logs"
+echo "Region:     $REGION"
+echo "Function:   $FUNCTION_NAME"
+echo "Log Group:  $LOG_GROUP"
+echo "Since:      $SINCE"
+echo "Follow:     $FOLLOW"
+echo
+
+CMD=(
+  aws logs tail "$LOG_GROUP"
+  --region "$REGION"
+  --since "$SINCE"
+)
+
+if [[ "$FOLLOW" == "yes" || "$FOLLOW" == "y" ]]; then
+  CMD+=(--follow)
+fi
+
+"${CMD[@]}"

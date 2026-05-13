@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+REGION="${1:-us-east-1}"
+QUEUE_NAME="${2:-shared-dev-QueueController-replica}"
+
+echo "🔎 Checking SQS queue"
+echo "Region:     $REGION"
+echo "Queue Name: $QUEUE_NAME"
+echo
+
+QUEUE_URL=$(aws sqs get-queue-url \
+  --region "$REGION" \
+  --queue-name "$QUEUE_NAME" \
+  --query 'QueueUrl' \
+  --output text 2>/dev/null || true)
+
+if [[ -z "$QUEUE_URL" || "$QUEUE_URL" == "None" ]]; then
+  echo "❌ Queue not found: $QUEUE_NAME"
+  exit 1
+fi
+
+echo "✅ Queue found"
+echo "Queue URL: $QUEUE_URL"
+echo
+
+echo "📊 Queue attributes"
+echo "------------------------------------------------------------"
+
+aws sqs get-queue-attributes \
+  --region "$REGION" \
+  --queue-url "$QUEUE_URL" \
+  --attribute-names All \
+  --output table
+
+echo
+echo "🏷️ Queue tags"
+echo "------------------------------------------------------------"
+
+aws sqs list-queue-tags \
+  --region "$REGION" \
+  --queue-url "$QUEUE_URL" \
+  --output table || echo "No tags found or access denied."
+
+echo
+echo "📈 Useful message counts"
+echo "------------------------------------------------------------"
+
+aws sqs get-queue-attributes \
+  --region "$REGION" \
+  --queue-url "$QUEUE_URL" \
+  --attribute-names \
+    ApproximateNumberOfMessages \
+    ApproximateNumberOfMessagesNotVisible \
+    ApproximateNumberOfMessagesDelayed \
+  --query 'Attributes' \
+  --output table

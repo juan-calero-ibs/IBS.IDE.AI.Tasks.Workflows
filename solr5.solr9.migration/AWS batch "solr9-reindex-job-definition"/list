@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+read -r -p "Enter AWS region [us-east-1]: " REGION
+REGION=${REGION:-us-east-1}
+
+# read -r -p "Enter AWS Batch job queue [solr9-reindex-job-queue]: " JOB_QUEUE
+JOB_QUEUE=${JOB_QUEUE:-solr9-reindex-job-queue}
+
+read -r -p "How many jobs per status? [10]: " MAX_RESULTS
+MAX_RESULTS=${MAX_RESULTS:-10}
+
+STATUSES=(
+  SUBMITTED
+  PENDING
+  RUNNABLE
+  STARTING
+  RUNNING
+  SUCCEEDED
+  FAILED
+)
+
+echo
+echo "🔎 Listing AWS Batch jobs"
+echo "Region:    $REGION"
+echo "Job Queue: $JOB_QUEUE"
+echo "Limit:     $MAX_RESULTS per status"
+echo
+
+for STATUS in "${STATUSES[@]}"; do
+  echo
+  echo "== $STATUS =="
+  echo "------------------------------------------------------------"
+
+  aws batch list-jobs \
+    --region "$REGION" \
+    --job-queue "$JOB_QUEUE" \
+    --job-status "$STATUS" \
+    --max-results "$MAX_RESULTS" \
+    --query 'jobSummaryList[].[
+      jobName,
+      jobId,
+      status,
+      createdAt
+    ]' \
+    --output table
+done
+
+echo
+echo "✅ Done"

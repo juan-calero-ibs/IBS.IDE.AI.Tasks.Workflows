@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+JOB_ID="${1:-}"
+
+read -r -p "Enter AWS region [us-east-1]: " REGION
+REGION=${REGION:-us-east-1}
+
+if [[ -z "$JOB_ID" ]]; then
+  read -r -p "Enter AWS Batch Job ID: " JOB_ID
+fi
+
+if [[ -z "$JOB_ID" ]]; then
+  echo "❌ Job ID is required."
+  exit 1
+fi
+
+echo
+echo "🔎 Checking AWS Batch job"
+echo "Region: $REGION"
+echo "Job ID: $JOB_ID"
+echo
+
+JOB_JSON=$(aws batch describe-jobs \
+  --region "$REGION" \
+  --jobs "$JOB_ID" \
+  --output json)
+
+JOB_COUNT=$(echo "$JOB_JSON" | jq '.jobs | length')
+
+if [[ "$JOB_COUNT" -eq 0 ]]; then
+  echo "❌ Job not found: $JOB_ID"
+  exit 1
+fi
+
+JOB_DEFINITION=$(echo "$JOB_JSON" | jq -r '.jobs[0].jobDefinition // empty')
+LOG_STREAM=$(echo "$JOB_JSON" | jq -r '.jobs[0].container.logStreamName // empty')
+
+echo "📋 Job summary"
+echo "------------------------------------------------------------"
+
+echo "$JOB_JSON" | jq -r '
+  .jobs[0] |
+  {
+    jobName,
+    jobId,
+    status,
+    statusReason,
+    jobQueue,
+    jobDefinition,
+    createdAt,
+    startedAt,
+    stoppedAt,
+    attempts: (.attempts | length),
+    containerExitCode: .container.exitCode,
+    containerReason: .container.reason,
+    logStreamName: .container.logStreamName
+  }
+'
+
+echo
+echo "📊 Table view"
+echo "------------------------------------------------------------"
+
+aws batch describe-jobs \
+  --region "$REGION" \
+  --jobs "$JOB_ID" \
+  --query 'jobs[0].{
+    JobName: jobName,
+    JobId: jobId,
+    Status: status,
+    StatusReason: statusReason,
+    Queue: jobQueue,
+    JobDefinition: jobDefinition,
+    ExitCode: container.exitCode,
+    Reason: container.reason,
+    LogStream: container.logStreamName
+  }' \
+  --output table
+
+resolve_log_group() {
+  local region="$1"
+  local job_definition="$2"
+  local log_group=""
+
+  if [[ -z "$job_definition" || "$job_definition" == "None" ]]; then
+    echo "/aws/batch/job"
+    return 0
+  fi
+
+  log_group=$(aws batch describe-job-definitions \
+    --region "$region" \
+    --job-definitions "$job_definition" \
+    --query 'jobDefinitions[0].containerProperties.logConfiguration.options."awslogs-group"' \
+    --output text 2>/dev/null || true)
+
+  if [[ -z "$log_group" || "$log_group" == "None" ]]; then
+    log_group="/aws/batch/job"
+  fi
+
+  echo "$log_group"
+}
+
+LOG_GROUP=$(resolve_log_group "$REGION" "$JOB_DEFINITION")
+
+echo
+echo "📜 CloudWatch log details"
+echo "------------------------------------------------------------"
+echo "Log Group:  $LOG_GROUP"
+
+if [[ -n "$LOG_STREAM" ]]; then
+  echo "Log Stream: $LOG_STREAM"
+else
+  echo "Log Stream: not available yet"
+fi
+
+if [[ -n "$LOG_STREAM" ]]; then
+  echo
+  read -r -p "Tail this job log now? [yes]: " TAIL_LOGS
+  TAIL_LOGS=${TAIL_LOGS:-yes}
+
+  if [[ "$TAIL_LOGS" == "yes" || "$TAIL_LOGS" == "y" ]]; then
+    read -r -p "Show logs since [30m]: " SINCE
+    SINCE=${SINCE:-30m}
+
+    echo
+    echo "📜 Tailing logs"
+    echo "Log Group:  $LOG_GROUP"
+    echo "Log Stream: $LOG_STREAM"
+    echo "Since:      $SINCE"
+    echo
+
+    aws logs tail "$LOG_GROUP" \
+      --region "$REGION" \
+      --log-stream-names "$LOG_STREAM" \
+      --since "$SINCE" \
+      --follow
+  fi
+else
+  echo
+  echo "⚠️ No log stream found yet. The job may not have started."
+fi

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+JOB_ID="${1:-}"
+
+LOG_GROUP="/aws/batch/solr9-customers-reindex"
+
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+GREY='\033[0;90m'
+RESET='\033[0m'
+
+read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
+AWS_REGION=${AWS_REGION:-us-east-1}
+
+if [[ -z "$JOB_ID" ]]; then
+  read -r -p "Enter AWS Batch Job ID: " JOB_ID
+fi
+
+if [[ -z "$JOB_ID" ]]; then
+  echo "❌ Job ID is required."
+  exit 1
+fi
+
+read -r -p "How many log events? [200]: " LOG_LIMIT
+LOG_LIMIT=${LOG_LIMIT:-200}
+
+if [[ ! "$LOG_LIMIT" =~ ^[0-9]+$ ]] || [[ "$LOG_LIMIT" -le 0 ]]; then
+  echo "❌ Log limit must be a positive number."
+  exit 1
+fi
+
+echo
+echo "🔎 Getting log stream from AWS Batch job"
+echo "Region:    $AWS_REGION"
+echo "Job ID:    $JOB_ID"
+echo "Log Group: $LOG_GROUP"
+echo "Limit:     $LOG_LIMIT"
+echo
+
+LOG_STREAM=$(aws batch describe-jobs \
+  --region "$AWS_REGION" \
+  --jobs "$JOB_ID" \
+  --query 'jobs[0].container.logStreamName' \
+  --output text)
+
+if [[ -z "$LOG_STREAM" || "$LOG_STREAM" == "None" ]]; then
+  echo "❌ No log stream found for job: $JOB_ID"
+  echo "The job may not have started yet, or logs are not configured."
+  exit 1
+fi
+
+echo "✅ Log Stream:"
+echo "$LOG_STREAM"
+echo
+
+echo "📜 Reading CloudWatch logs"
+echo "------------------------------------------------------------"
+echo
+
+aws logs get-log-events \
+  --region "$AWS_REGION" \
+  --log-group-name "$LOG_GROUP" \
+  --log-stream-name "$LOG_STREAM" \
+  --limit "$LOG_LIMIT" \
+  --output json \
+| jq -r '
+    .events[]
+    | [
+        ((.timestamp / 1000) | strftime("%Y-%m-%d %H:%M:%S")),
+        .message
+      ]
+    | @tsv
+  ' \
+| while IFS=$'\t' read -r TS MESSAGE; do
+    if [[ "$MESSAGE" == *"ERROR"* || "$MESSAGE" == *"📛"* ]]; then
+      echo -e "${RED}${TS}  ${MESSAGE}${RESET}"
+    elif [[ "$MESSAGE" == *"WARNING"* ]]; then
+      echo -e "${YELLOW}${TS}  ${MESSAGE}${RESET}"
+    elif [[ "$MESSAGE" == *"INFO"* ]]; then
+      echo -e "${GREEN}${TS}  ${MESSAGE}${RESET}"
+    else
+      echo -e "${GREY}${TS}  ${MESSAGE}${RESET}"
+    fi
+  done

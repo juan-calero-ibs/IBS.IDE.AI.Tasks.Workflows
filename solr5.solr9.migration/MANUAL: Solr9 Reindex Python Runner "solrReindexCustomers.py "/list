@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+GREY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+BUCKET="solr9-ids-for-indexing"
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+print_valid_values() {
+  local values=("$@")
+
+  if [[ "${#values[@]}" -gt 0 ]]; then
+    echo -e "${GREY}  Valid values: ${values[*]}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+  read -r value
+
+  echo "${value:-$default}"
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="$3"
+  shift 3
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values "${valid_values[@]}"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo -e "${RED}❌ Invalid value. Valid values are: ${valid_values[*]}${RESET}" >&2
+  done
+}
+
+human_size() {
+  local bytes="$1"
+
+  awk -v bytes="$bytes" '
+    function human(x) {
+      split("B KB MB GB TB", units, " ")
+      i = 1
+      while (x >= 1024 && i < 5) {
+        x = x / 1024
+        i++
+      }
+      return sprintf("%.2f %s", x, units[i])
+    }
+    BEGIN {
+      print human(bytes)
+    }
+  '
+}
+
+echo
+echo -e "${BOLD}${CYAN}🪣 S3 Solr9 Manifest File Browser${RESET}"
+echo -e "${GREY}  Lists files from the Solr9 manifest bucket layout.${RESET}"
+echo -e "${GREY}  Bucket is fixed in this script: ${BUCKET}${RESET}"
+echo
+
+REGION=$(prompt_value \
+  "Enter AWS region" \
+  "us-east-1" \
+  "AWS region where the manifest bucket is accessed.")
+
+COLLECTION=$(prompt_valid_value \
+  "Enter collection" \
+  "customers" \
+  "Collection path segment under the bucket." \
+  customers agreements products reservations reservationproducts)
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "dev" \
+  "Environment path segment under the collection." \
+  dev stage prod)
+
+S3_FOLDER=$(prompt_valid_value \
+  "Enter S3 folder" \
+  "input" \
+  "Lifecycle folder to list. Use all to list every folder under collection/environment." \
+  input output invalid replay summary skipped all)
+
+FILE_SCOPE=$(prompt_valid_value \
+  "List today's files or all files?" \
+  "today" \
+  "today filters by the current UTC date. all lists every matching object under the selected prefix." \
+  today all)
+
+SORT_ORDER=$(prompt_valid_value \
+  "Sort by date" \
+  "oldest" \
+  "Controls output order using the S3 LastModified timestamp." \
+  oldest newest)
+
+if [[ "$S3_FOLDER" == "all" ]]; then
+  S3_PREFIX="${COLLECTION}/${ENVIRONMENT}/"
+else
+  S3_PREFIX="${COLLECTION}/${ENVIRONMENT}/${S3_FOLDER}/"
+fi
+
+S3_PREFIX_URI="s3://${BUCKET}/${S3_PREFIX}"
+TODAY_UTC=$(date -u +"%Y-%m-%d")
+
+if [[ "$FILE_SCOPE" == "today" ]]; then
+  QUERY="Contents[?Size>\`0\` && starts_with(LastModified, \`${TODAY_UTC}\`)].[LastModified,Size,Key]"
+else
+  QUERY="Contents[?Size>\`0\`].[LastModified,Size,Key]"
+fi
+
+echo
+echo -e "${BOLD}${CYAN}🔎 Listing S3 files${RESET}"
+echo "Region:      $REGION"
+echo "Bucket:      $BUCKET"
+echo "Collection:  $COLLECTION"
+echo "Environment: $ENVIRONMENT"
+echo "Folder:      $S3_FOLDER"
+echo "S3 Prefix:   $S3_PREFIX_URI"
+echo "Scope:       $FILE_SCOPE"
+echo "Sort:        $SORT_ORDER"
+
+if [[ "$FILE_SCOPE" == "today" ]]; then
+  echo "Date Filter: $TODAY_UTC UTC"
+fi
+
+echo
+
+if [[ "$SORT_ORDER" == "newest" ]]; then
+  mapfile -t ROWS < <(
+    aws s3api list-objects-v2 \
+      --region "$REGION" \
+      --bucket "$BUCKET" \
+      --prefix "$S3_PREFIX" \
+      --query "$QUERY" \
+      --output text 2>/dev/null \
+    | awk 'NF' \
+    | sort -r
+  )
+else
+  mapfile -t ROWS < <(
+    aws s3api list-objects-v2 \
+      --region "$REGION" \
+      --bucket "$BUCKET" \
+      --prefix "$S3_PREFIX" \
+      --query "$QUERY" \
+      --output text 2>/dev/null \
+    | awk 'NF' \
+    | sort
+  )
+fi
+
+if [[ "${#ROWS[@]}" -eq 0 ]]; then
+  echo -e "${YELLOW}⚠️  No files found.${RESET}"
+
+  if [[ "$FILE_SCOPE" == "today" ]]; then
+    echo
+    echo -e "${GREY}  Tip: choose 'all' when prompted for file scope to list older files.${RESET}"
+  fi
+
+  echo
+  echo "S3 Prefix: $S3_PREFIX_URI"
+  exit 1
+fi
+
+echo -e "${GREY}📄 Files found in $S3_PREFIX_URI${RESET}"
+echo
+
+if [[ "$S3_FOLDER" == "all" ]]; then
+  echo -e "${GREY}$(printf '%-30s %-12s %-10s %s' "LAST MODIFIED" "SIZE" "FOLDER" "S3 URI")${RESET}"
+  echo -e "${GREY}$(printf '%-30s %-12s %-10s %s' "-------------" "----" "------" "------")${RESET}"
+else
+  echo -e "${GREY}$(printf '%-30s %-12s %s' "LAST MODIFIED" "SIZE" "S3 URI")${RESET}"
+  echo -e "${GREY}$(printf '%-30s %-12s %s' "-------------" "----" "------")${RESET}"
+fi
+
+TOTAL_BYTES=0
+TOTAL_FILES=0
+
+for ROW in "${ROWS[@]}"; do
+  LAST_MODIFIED=$(echo "$ROW" | awk '{print $1}')
+  SIZE=$(echo "$ROW" | awk '{print $2}')
+  KEY=$(echo "$ROW" | awk '{$1=""; $2=""; sub(/^  */, ""); print}')
+
+  DISPLAY_SIZE=$(human_size "$SIZE")
+  FULL_S3_URI="s3://${BUCKET}/${KEY}"
+
+  TOTAL_BYTES=$((TOTAL_BYTES + SIZE))
+  TOTAL_FILES=$((TOTAL_FILES + 1))
+
+  if [[ "$S3_FOLDER" == "all" ]]; then
+    RELATIVE_KEY="${KEY#${COLLECTION}/${ENVIRONMENT}/}"
+    FOLDER_NAME="${RELATIVE_KEY%%/*}"
+
+    echo -e "${GREY}$(printf '%-30s %-12s %-10s %s' "$LAST_MODIFIED" "$DISPLAY_SIZE" "$FOLDER_NAME" "$FULL_S3_URI")${RESET}"
+  else
+    echo -e "${GREY}$(printf '%-30s %-12s %s' "$LAST_MODIFIED" "$DISPLAY_SIZE" "$FULL_S3_URI")${RESET}"
+  fi
+done
+
+TOTAL_DISPLAY_SIZE=$(human_size "$TOTAL_BYTES")
+
+echo
+echo -e "${BOLD}${GREEN}✅ Done${RESET}"
+echo "Files:      $TOTAL_FILES"
+echo "Total Size: $TOTAL_DISPLAY_SIZE"

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
+AWS_REGION=${AWS_REGION:-us-east-1}
+
+read -r -p "Enter ECR repository name [solr9-reindex-runner]: " REPOSITORY_NAME
+REPOSITORY_NAME=${REPOSITORY_NAME:-solr9-reindex-runner}
+
+read -r -p "How many images to list? [20]: " MAX_RESULTS
+MAX_RESULTS=${MAX_RESULTS:-20}
+
+echo
+echo "🔎 Listing ECR images"
+echo "Region:     $AWS_REGION"
+echo "Repository: $REPOSITORY_NAME"
+echo "Limit:      $MAX_RESULTS"
+echo
+
+aws ecr describe-images \
+  --region "$AWS_REGION" \
+  --repository-name "$REPOSITORY_NAME" \
+  --max-results "$MAX_RESULTS" \
+  --query 'imageDetails[].{
+    Tags: imageTags,
+    Digest: imageDigest,
+    PushedAt: imagePushedAt,
+    SizeMB: imageSizeInBytes
+  }' \
+  --output table

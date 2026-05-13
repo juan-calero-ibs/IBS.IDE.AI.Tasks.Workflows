@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+JOB_ID="${1:-}"
+
+read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
+AWS_REGION=${AWS_REGION:-us-east-1}
+
+if [[ -z "$JOB_ID" ]]; then
+  read -r -p "Enter AWS Batch Job ID: " JOB_ID
+fi
+
+if [[ -z "$JOB_ID" ]]; then
+  echo "❌ Job ID is required."
+  exit 1
+fi
+
+echo
+echo "🔎 AWS Batch Job Info"
+echo "Region: $AWS_REGION"
+echo "Job ID: $JOB_ID"
+echo
+
+aws batch describe-jobs \
+  --region "$AWS_REGION" \
+  --jobs "$JOB_ID" \
+  --query 'jobs[0].{
+    JobName:jobName,
+    Status:status,
+    StatusReason:statusReason,
+    JobDefinition:jobDefinition,
+    JobQueue:jobQueue,
+    CreatedAt:createdAt,
+    StartedAt:startedAt,
+    StoppedAt:stoppedAt,
+    ExitCode:container.exitCode,
+    ContainerReason:container.reason,
+    LogStream:container.logStreamName
+  }' \
+  --output table

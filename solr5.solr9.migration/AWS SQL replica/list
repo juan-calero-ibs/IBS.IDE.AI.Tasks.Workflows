@@ -1,0 +1,456 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PYTHON_SCRIPT="./solrReindexCustomers.py"
+
+DEFAULT_MANIFEST_S3_URI="s3://solr9-ids-for-indexing/customers/dev/replay/customers_dev_all_20260501T150413Z_missing_solr9.jsonl"
+DEFAULT_COLLECTION="customers"
+DEFAULT_ENVIRONMENT="dev"
+DEFAULT_BASE_URL="http://localhost:18080"
+DEFAULT_OUTPUT_BUCKET="solr9-ids-for-indexing"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+GREY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+print_valid_values() {
+  local values=("$@")
+
+  if [[ "${#values[@]}" -gt 0 ]]; then
+    echo -e "${GREY}  Valid values: ${values[*]}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+  read -r value
+
+  echo "${value:-$default}"
+}
+
+prompt_optional_value() {
+  local prompt="$1"
+  local help_text="${2:-}"
+  local value
+
+  print_help "$help_text"
+  echo -ne "${BOLD}${prompt}${RESET} [optional]: " >&2
+  read -r value
+
+  echo "$value"
+}
+
+prompt_secret_value() {
+  local prompt="$1"
+  local default_is_optional="${2:-no}"
+  local value
+
+  while true; do
+    if [[ "$default_is_optional" == "yes" ]]; then
+      print_help "Optional secret. Press ENTER to leave unset."
+      echo -ne "${BOLD}${prompt}${RESET} [optional]: " >&2
+    else
+      print_help "Required unless this is a dry run."
+      echo -ne "${BOLD}${prompt}${RESET}: " >&2
+    fi
+
+    read -r -s value
+    echo >&2
+
+    if [[ "$default_is_optional" == "yes" || -n "$value" ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo -e "${RED}❌ Value is required.${RESET}" >&2
+  done
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="$3"
+  shift 3
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values "${valid_values[@]}"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo -e "${RED}❌ Invalid value. Valid values are: ${valid_values[*]}${RESET}" >&2
+  done
+}
+
+prompt_positive_int() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo -e "${RED}❌ Invalid value. Please enter a positive integer.${RESET}" >&2
+  done
+}
+
+prompt_non_negative_int() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo -e "${RED}❌ Invalid value. Please enter 0 or a positive integer.${RESET}" >&2
+  done
+}
+
+prompt_positive_number() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN {exit !($value > 0)}"; then
+      echo "$value"
+      return 0
+    fi
+
+    echo -e "${RED}❌ Invalid value. Please enter a positive number.${RESET}" >&2
+  done
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    print_valid_values yes no
+
+    echo -ne "${BOLD}${prompt}${RESET} [${default}]: " >&2
+    read -r value
+    value=${value:-$default}
+
+    case "$value" in
+      y|yes|Y|YES)
+        echo "yes"
+        return 0
+        ;;
+      n|no|N|NO)
+        echo "no"
+        return 0
+        ;;
+      *)
+        echo -e "${RED}❌ Invalid value. Use yes or no.${RESET}" >&2
+        ;;
+    esac
+  done
+}
+
+if [[ ! -f "$PYTHON_SCRIPT" ]]; then
+  echo -e "${RED}❌ Python script not found:${RESET}"
+  echo "$PYTHON_SCRIPT"
+  echo
+  echo -e "${GREY}  Expected to run from the directory containing solrReindexCustomers.py.${RESET}"
+  exit 1
+fi
+
+MANIFEST_S3_URI_FROM_ARG="${1:-}"
+
+echo
+echo -e "${BOLD}${CYAN}🚀 Solr9 Reindex Customers — S3 Manifest Runner${RESET}"
+echo -e "${GREY}  Script: $PYTHON_SCRIPT${RESET}"
+echo -e "${GREY}  Mode:   S3 manifest only; legacy --file mode is intentionally not used.${RESET}"
+echo
+
+if [[ -n "$MANIFEST_S3_URI_FROM_ARG" ]]; then
+  MANIFEST_S3_URI="$MANIFEST_S3_URI_FROM_ARG"
+  echo -e "${GREEN}✅ Manifest URI received from first parameter:${RESET}"
+  echo "$MANIFEST_S3_URI"
+  echo
+else
+  MANIFEST_S3_URI=$(prompt_value \
+    "Enter manifest S3 URI" \
+    "$DEFAULT_MANIFEST_S3_URI" \
+    "Used as --manifest-s3-uri. Must point to a JSONL or CSV manifest in S3.")
+fi
+
+if [[ ! "$MANIFEST_S3_URI" =~ ^s3://[^/]+/.+ ]]; then
+  echo -e "${RED}❌ Invalid S3 URI:${RESET} $MANIFEST_S3_URI"
+  echo "Expected: s3://bucket/path/file.jsonl"
+  exit 1
+fi
+
+EXECUTION_MODE="s3-id-manifest"
+
+COLLECTION=$(prompt_valid_value \
+  "Enter collection" \
+  "$DEFAULT_COLLECTION" \
+  "Used as --collection. Required with --manifest-s3-uri." \
+  customers agreements products reservations reservationproducts)
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "$DEFAULT_ENVIRONMENT" \
+  "Used as --environment. Required with --manifest-s3-uri." \
+  dev stage prod)
+
+BASE_URL=$(prompt_value \
+  "Enter APS BASE_URL" \
+  "$DEFAULT_BASE_URL" \
+  "Used as --base-url. APS base URL exposing /task/customersearch/batch.")
+
+ADMIN_USERNAME=$(prompt_value \
+  "Enter ADMIN_USERNAME" \
+  "admin" \
+  "Used as --admin_username for APS Basic auth.")
+
+DRY_RUN=$(prompt_yes_no \
+  "Dry run?" \
+  "no" \
+  "If yes, adds --dry-run. Validates manifest and writes S3 artifacts only; no APS POST.")
+
+if [[ "$DRY_RUN" == "yes" ]]; then
+  ADMIN_PASSWORD=$(prompt_secret_value "Enter ADMIN_PASSWORD" "yes")
+else
+  ADMIN_PASSWORD=$(prompt_secret_value "Enter ADMIN_PASSWORD" "no")
+fi
+
+BATCH_SIZE=$(prompt_positive_int \
+  "Enter batch size" \
+  "100" \
+  "Used as --batchsize. Max customer IDs per POST to /task/customersearch/batch.")
+
+MAX_HTTP_RETRIES=$(prompt_non_negative_int \
+  "Enter max HTTP retries" \
+  "0" \
+  "Used as --max-http-retries. 0 means only the initial HTTP attempt.")
+
+RETRY_BACKOFF_SECONDS=$(prompt_positive_number \
+  "Enter retry backoff seconds" \
+  "2" \
+  "Used as --retry-backoff-seconds. Base seconds for exponential retry backoff.")
+
+FORMAT=$(prompt_valid_value \
+  "Enter manifest format override" \
+  "auto" \
+  "Use auto to let the runner infer from .jsonl or .csv. Otherwise passes --format." \
+  auto jsonl csv)
+
+OUTPUT_S3_PREFIX_DEFAULT="s3://${DEFAULT_OUTPUT_BUCKET}/${COLLECTION}/${ENVIRONMENT}/"
+
+OUTPUT_S3_PREFIX=$(prompt_value \
+  "Enter output S3 prefix" \
+  "$OUTPUT_S3_PREFIX_DEFAULT" \
+  "Used as --output-s3-prefix. Artifacts go under output/, replay/, summary/, skipped/, etc.")
+
+EXECUTION_ID=$(prompt_optional_value \
+  "Enter execution ID" \
+  "Optional. Used as --execution-id. Leave empty for random UUID.")
+
+OUTPUT_LOCAL_DIR=$(prompt_optional_value \
+  "Enter output local dir" \
+  "Optional. Used as --output-local-dir when writing local artifacts.")
+
+WRITE_LOCAL_ARTIFACTS=$(prompt_yes_no \
+  "Write local artifacts?" \
+  "no" \
+  "If yes, adds --write-local-artifacts. Useful for local debugging.")
+
+PER_ID_ON_BATCH_FAILURE=$(prompt_yes_no \
+  "Enable per-ID fallback on batch failure?" \
+  "no" \
+  "If yes, adds --per-id-on-batch-failure. More accurate per-ID records, but extra HTTP calls.")
+
+SKIP_EXISTING_IN_SOLR9=$(prompt_yes_no \
+  "Skip existing IDs in Solr9?" \
+  "no" \
+  "If yes, adds --skip-existing-in-solr9 and requires --solr9-url.")
+
+SOLR9_URL=""
+SOLR9_AUTH=""
+SOLR9_TERMS_BATCH="1500"
+SOLR9_TIMEOUT_SECONDS="120"
+
+if [[ "$SKIP_EXISTING_IN_SOLR9" == "yes" ]]; then
+  SOLR9_URL=$(prompt_value \
+    "Enter Solr9 URL" \
+    "http://localhost:9010/solr/${COLLECTION}" \
+    "Used as --solr9-url. Required when skip-existing mode is enabled.")
+
+  SOLR9_AUTH=$(prompt_optional_value \
+    "Enter Solr9 auth USER:PASS" \
+    "Optional. Used as --solr9-auth for Solr9 /select.")
+
+  SOLR9_TERMS_BATCH=$(prompt_positive_int \
+    "Enter Solr9 terms batch size" \
+    "1500" \
+    "Used as --solr9-terms-batch. Max IDs per Solr9 {!terms f=id} lookup.")
+
+  SOLR9_TIMEOUT_SECONDS=$(prompt_positive_number \
+    "Enter Solr9 timeout seconds" \
+    "120" \
+    "Used as --solr9-timeout-seconds. Timeout per Solr9 /select request.")
+fi
+
+CMD=(
+  python3 "$PYTHON_SCRIPT"
+  --manifest-s3-uri "$MANIFEST_S3_URI"
+  --execution-mode "$EXECUTION_MODE"
+  --collection "$COLLECTION"
+  --environment "$ENVIRONMENT"
+  --base-url "$BASE_URL"
+  --admin_username "$ADMIN_USERNAME"
+  --batchsize "$BATCH_SIZE"
+  --max-http-retries "$MAX_HTTP_RETRIES"
+  --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS"
+  --output-s3-prefix "$OUTPUT_S3_PREFIX"
+)
+
+if [[ -n "$ADMIN_PASSWORD" ]]; then
+  CMD+=(--admin_password "$ADMIN_PASSWORD")
+fi
+
+if [[ "$FORMAT" != "auto" ]]; then
+  CMD+=(--format "$FORMAT")
+fi
+
+if [[ -n "$EXECUTION_ID" ]]; then
+  CMD+=(--execution-id "$EXECUTION_ID")
+fi
+
+if [[ -n "$OUTPUT_LOCAL_DIR" ]]; then
+  CMD+=(--output-local-dir "$OUTPUT_LOCAL_DIR")
+fi
+
+if [[ "$WRITE_LOCAL_ARTIFACTS" == "yes" ]]; then
+  CMD+=(--write-local-artifacts)
+fi
+
+if [[ "$PER_ID_ON_BATCH_FAILURE" == "yes" ]]; then
+  CMD+=(--per-id-on-batch-failure)
+fi
+
+if [[ "$SKIP_EXISTING_IN_SOLR9" == "yes" ]]; then
+  CMD+=(--skip-existing-in-solr9)
+  CMD+=(--solr9-url "$SOLR9_URL")
+  CMD+=(--solr9-terms-batch "$SOLR9_TERMS_BATCH")
+  CMD+=(--solr9-timeout-seconds "$SOLR9_TIMEOUT_SECONDS")
+
+  if [[ -n "$SOLR9_AUTH" ]]; then
+    CMD+=(--solr9-auth "$SOLR9_AUTH")
+  fi
+fi
+
+if [[ "$DRY_RUN" == "yes" ]]; then
+  CMD+=(--dry-run)
+fi
+
+echo
+echo -e "${BOLD}${GREEN}🚀 Running Solr9 Reindex Python Runner${RESET}"
+echo "Manifest URI:              $MANIFEST_S3_URI"
+echo "Execution Mode:            $EXECUTION_MODE"
+echo "Collection:                $COLLECTION"
+echo "Environment:               $ENVIRONMENT"
+echo "Base URL:                  $BASE_URL"
+echo "Admin Username:            $ADMIN_USERNAME"
+echo "Admin Password:            ********"
+echo "Batch Size:                $BATCH_SIZE"
+echo "Max HTTP Retries:          $MAX_HTTP_RETRIES"
+echo "Retry Backoff Seconds:     $RETRY_BACKOFF_SECONDS"
+echo "Manifest Format Override:  $FORMAT"
+echo "Output S3 Prefix:          $OUTPUT_S3_PREFIX"
+echo "Execution ID:              ${EXECUTION_ID:-<generated by runner>}"
+echo "Output Local Dir:          ${OUTPUT_LOCAL_DIR:-<default / none>}"
+echo "Write Local Artifacts:     $WRITE_LOCAL_ARTIFACTS"
+echo "Per-ID Fallback:           $PER_ID_ON_BATCH_FAILURE"
+echo "Skip Existing in Solr9:    $SKIP_EXISTING_IN_SOLR9"
+
+if [[ "$SKIP_EXISTING_IN_SOLR9" == "yes" ]]; then
+  echo "Solr9 URL:                 $SOLR9_URL"
+  echo "Solr9 Auth:                ${SOLR9_AUTH:+********}"
+  echo "Solr9 Terms Batch:         $SOLR9_TERMS_BATCH"
+  echo "Solr9 Timeout Seconds:     $SOLR9_TIMEOUT_SECONDS"
+fi
+
+echo "Dry Run:                   $DRY_RUN"
+echo
+
+SAFE_CMD=("${CMD[@]}")
+for i in "${!SAFE_CMD[@]}"; do
+  if [[ "${SAFE_CMD[$i]}" == "--admin_password" && $((i + 1)) -lt ${#SAFE_CMD[@]} ]]; then
+    SAFE_CMD[$((i + 1))]="********"
+  fi
+
+  if [[ "${SAFE_CMD[$i]}" == "--solr9-auth" && $((i + 1)) -lt ${#SAFE_CMD[@]} ]]; then
+    SAFE_CMD[$((i + 1))]="********"
+  fi
+done
+
+echo -e "${GREY}Command:${RESET}"
+printf ' %q' "${SAFE_CMD[@]}"
+echo
+echo
+
+"${CMD[@]}"

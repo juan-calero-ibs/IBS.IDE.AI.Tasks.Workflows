@@ -1,0 +1,378 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PYTHON_SCRIPT="/Users/juan/src/github.com/aboveproperty/aboveproperty.devops/runbooks/solrMissingDocumentIdsSolr5VsSolr9.py"
+DEFAULT_BUCKET="solr9-ids-for-indexing"
+
+GREY='\033[0;90m'
+RESET='\033[0m'
+
+print_help() {
+  local text="$1"
+
+  if [[ -n "$text" ]]; then
+    echo -e "${GREY}  ${text}${RESET}" >&2
+  fi
+}
+
+prompt_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  print_help "$help_text"
+  read -r -p "$prompt [$default]: " value
+  echo "${value:-$default}"
+}
+
+prompt_optional_value() {
+  local prompt="$1"
+  local help_text="${2:-}"
+  local value
+
+  print_help "$help_text"
+  read -r -p "$prompt [optional]: " value
+  echo "$value"
+}
+
+prompt_valid_value() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="$3"
+  shift 3
+  local valid_values=("$@")
+  local value
+
+  while true; do
+    print_help "$help_text"
+    echo -e "${GREY}  Valid values: ${valid_values[*]}${RESET}" >&2
+
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    for valid in "${valid_values[@]}"; do
+      if [[ "$value" == "$valid" ]]; then
+        echo "$value"
+        return 0
+      fi
+    done
+
+    echo "❌ Invalid value. Valid values are: ${valid_values[*]}" >&2
+  done
+}
+
+prompt_positive_int() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 ]]; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Invalid value. Please enter a positive integer." >&2
+  done
+}
+
+prompt_positive_number() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    if [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN {exit !($value > 0)}"; then
+      echo "$value"
+      return 0
+    fi
+
+    echo "❌ Invalid value. Please enter a positive number." >&2
+  done
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="$2"
+  local help_text="${3:-}"
+  local value
+
+  while true; do
+    print_help "$help_text"
+    echo -e "${GREY}  Valid values: yes no${RESET}" >&2
+
+    read -r -p "$prompt [$default]: " value
+    value=${value:-$default}
+
+    case "$value" in
+      y|yes|Y|YES)
+        echo "yes"
+        return 0
+        ;;
+      n|no|N|NO)
+        echo "no"
+        return 0
+        ;;
+      *)
+        echo "❌ Invalid value. Use yes or no." >&2
+        ;;
+    esac
+  done
+}
+
+if [[ ! -f "$PYTHON_SCRIPT" ]]; then
+  echo "❌ Python script not found:"
+  echo "$PYTHON_SCRIPT"
+  exit 1
+fi
+
+echo
+echo "🔎 Solr5 vs Solr9 Document Validation Runner"
+echo "Script: $PYTHON_SCRIPT"
+echo
+
+MODE=$(prompt_valid_value \
+  "Choose run mode" \
+  "count-only" \
+  "count-only validates counts only. gap-scan finds IDs present in Solr5 but missing in Solr9. dump-all-solr5-ids exports all Solr5 IDs." \
+  count-only gap-scan dump-all-solr5-ids)
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "dev" \
+  "Environment label used in S3 output path and summary metadata." \
+  dev stage prod)
+
+COLLECTION=$(prompt_valid_value \
+  "Enter collection" \
+  "customers" \
+  "Logical Solr collection. Defaults match the customers reindex manifest contract." \
+  customers agreements products reservations reservationproducts)
+
+SOLR5_URL=$(prompt_value \
+  "Enter Solr5 URL" \
+  "http://localhost:8983/solr/${COLLECTION}" \
+  "Solr5 base URL including core/collection.")
+
+if [[ "$MODE" == "dump-all-solr5-ids" ]]; then
+  SOLR9_URL=""
+else
+  SOLR9_URL=$(prompt_value \
+    "Enter Solr9 URL" \
+    "http://localhost:9010/solr/${COLLECTION}" \
+    "Solr9 base URL including core/collection.")
+fi
+
+UNIQUE_KEY_FIELD=$(prompt_value \
+  "Enter Solr unique key field" \
+  "id" \
+  "Solr field used for cursor sorting, extraction, and Solr9 terms lookup.")
+
+MANIFEST_ID_KEY_DEFAULT="customerId"
+TERMS_ID_MODE_DEFAULT="uuid"
+
+if [[ "$COLLECTION" != "customers" ]]; then
+  MANIFEST_ID_KEY_DEFAULT="documentId"
+  TERMS_ID_MODE_DEFAULT="str"
+fi
+
+MANIFEST_ID_KEY=$(prompt_value \
+  "Enter manifest id JSON key" \
+  "$MANIFEST_ID_KEY_DEFAULT" \
+  "JSON key written to each manifest row. For customers, use customerId.")
+
+TERMS_ID_MODE=$(prompt_valid_value \
+  "Enter Solr9 terms id mode" \
+  "$TERMS_ID_MODE_DEFAULT" \
+  "uuid allows only UUID-shaped IDs. str allows non-comma string IDs for non-customer collections." \
+  uuid str)
+
+OUTPUT_S3_PREFIX=$(prompt_value \
+  "Enter output S3 prefix" \
+  "s3://${DEFAULT_BUCKET}/${COLLECTION}/${ENVIRONMENT}/" \
+  "Base S3 prefix. Gap/export manifests are written under replay/. Count validation summaries are written under validation/.")
+
+SCOPE_FILTER_VALUE=$(prompt_optional_value \
+  "Enter optional scope filter value" \
+  "Optional fq value. Leave empty for full collection scan/count.")
+
+SCOPE_FILTER_FIELD=$(prompt_value \
+  "Enter scope filter Solr field" \
+  "affiliateCustomerID" \
+  "Solr field used with the optional scope filter value.")
+
+SOLR5_QUERY=$(prompt_value \
+  "Enter Solr5 query" \
+  "*:*" \
+  "Main Solr5 q parameter. Optional scope filter is added separately as fq.")
+
+if [[ "$MODE" == "count-only" ]]; then
+  SOLR9_QUERY=$(prompt_value \
+    "Enter Solr9 query" \
+    "*:*" \
+    "Main Solr9 q parameter for count validation.")
+else
+  SOLR9_QUERY=""
+fi
+
+SOLR5_ROWS=$(prompt_positive_int \
+  "Enter Solr5 cursor rows" \
+  "2000" \
+  "Cursor page size for Solr5 ID scans.")
+
+SOLR9_TERMS_BATCH=$(prompt_positive_int \
+  "Enter Solr9 terms batch size" \
+  "1500" \
+  "Max IDs per Solr9 {!terms} lookup during gap scan.")
+
+TIMEOUT_S=$(prompt_positive_number \
+  "Enter Solr timeout seconds" \
+  "120" \
+  "HTTP timeout per Solr request.")
+
+SOLR_AUTH=$(prompt_optional_value \
+  "Enter shared Solr auth USER:PASS" \
+  "Optional Basic Auth used for both Solr5 and Solr9 unless side-specific auth is provided.")
+
+SOLR5_AUTH=$(prompt_optional_value \
+  "Enter Solr5 auth USER:PASS" \
+  "Optional Solr5-only Basic Auth. Overrides shared auth for Solr5.")
+
+SOLR9_AUTH=$(prompt_optional_value \
+  "Enter Solr9 auth USER:PASS" \
+  "Optional Solr9-only Basic Auth. Overrides shared auth for Solr9.")
+
+DRY_RUN=$(prompt_yes_no \
+  "Dry run?" \
+  "no" \
+  "yes skips S3 upload and writes output to stdout where supported.")
+
+MISSING_IDS_ONLY="no"
+FAIL_ON_MISMATCH="no"
+
+if [[ "$MODE" != "count-only" ]]; then
+  MISSING_IDS_ONLY=$(prompt_yes_no \
+    "Write minimal ID-only manifest?" \
+    "yes" \
+    "yes writes only the manifest ID key, for example {\"customerId\":\"...\"}.")
+fi
+
+if [[ "$MODE" == "count-only" ]]; then
+  FAIL_ON_MISMATCH=$(prompt_yes_no \
+    "Fail on mismatch?" \
+    "yes" \
+    "yes exits with code 2 when Solr5 and Solr9 counts differ.")
+fi
+
+CMD=(
+  python3 "$PYTHON_SCRIPT"
+  --solr5-url "$SOLR5_URL"
+  --collection "$COLLECTION"
+  --environment "$ENVIRONMENT"
+  --output-s3-prefix "$OUTPUT_S3_PREFIX"
+  --unique-key-field "$UNIQUE_KEY_FIELD"
+  --manifest-id-key "$MANIFEST_ID_KEY"
+  --terms-id-mode "$TERMS_ID_MODE"
+  --affiliate-field "$SCOPE_FILTER_FIELD"
+  --solr5-rows "$SOLR5_ROWS"
+  --solr9-terms-batch "$SOLR9_TERMS_BATCH"
+  --timeout-s "$TIMEOUT_S"
+)
+
+if [[ "$MODE" != "dump-all-solr5-ids" ]]; then
+  CMD+=(--solr9-url "$SOLR9_URL")
+fi
+
+if [[ "$MODE" == "count-only" ]]; then
+  CMD+=(--count-only)
+fi
+
+if [[ "$MODE" == "dump-all-solr5-ids" ]]; then
+  CMD+=(--dump-all-solr5-ids)
+fi
+
+if [[ -n "$SCOPE_FILTER_VALUE" ]]; then
+  CMD+=(--affiliate "$SCOPE_FILTER_VALUE")
+fi
+
+if [[ -n "$SOLR5_QUERY" && "$SOLR5_QUERY" != "*:*" ]]; then
+  CMD+=(--solr5-query "$SOLR5_QUERY")
+fi
+
+if [[ "$MODE" == "count-only" && -n "$SOLR9_QUERY" && "$SOLR9_QUERY" != "*:*" ]]; then
+  CMD+=(--solr9-query "$SOLR9_QUERY")
+fi
+
+if [[ -n "$SOLR_AUTH" ]]; then
+  CMD+=(--solr-auth "$SOLR_AUTH")
+fi
+
+if [[ -n "$SOLR5_AUTH" ]]; then
+  CMD+=(--solr5-auth "$SOLR5_AUTH")
+fi
+
+if [[ -n "$SOLR9_AUTH" ]]; then
+  CMD+=(--solr9-auth "$SOLR9_AUTH")
+fi
+
+if [[ "$DRY_RUN" == "yes" ]]; then
+  CMD+=(--dry-run)
+fi
+
+if [[ "$MISSING_IDS_ONLY" == "yes" ]]; then
+  CMD+=(--missing-ids-only)
+fi
+
+if [[ "$FAIL_ON_MISMATCH" == "yes" ]]; then
+  CMD+=(--fail-on-mismatch)
+fi
+
+echo
+echo "🚀 Running Solr5 vs Solr9 document check"
+echo "Mode:              $MODE"
+echo "Collection:        $COLLECTION"
+echo "Environment:       $ENVIRONMENT"
+echo "Solr5 URL:         $SOLR5_URL"
+
+if [[ "$MODE" != "dump-all-solr5-ids" ]]; then
+  echo "Solr9 URL:         $SOLR9_URL"
+fi
+
+echo "Output S3 Prefix:  $OUTPUT_S3_PREFIX"
+echo "Unique Key Field:  $UNIQUE_KEY_FIELD"
+echo "Manifest ID Key:   $MANIFEST_ID_KEY"
+echo "Terms ID Mode:     $TERMS_ID_MODE"
+echo "Scope Filter:      ${SCOPE_FILTER_VALUE:-<none>}"
+echo "Scope Field:       $SCOPE_FILTER_FIELD"
+echo "Solr5 Query:       $SOLR5_QUERY"
+
+if [[ "$MODE" == "count-only" ]]; then
+  echo "Solr9 Query:       $SOLR9_QUERY"
+  echo "Fail on Mismatch:  $FAIL_ON_MISMATCH"
+fi
+
+echo "Dry Run:           $DRY_RUN"
+
+if [[ "$MODE" != "count-only" ]]; then
+  echo "Minimal Manifest:  $MISSING_IDS_ONLY"
+fi
+
+echo
+printf 'Command:\n'
+printf ' %q' "${CMD[@]}"
+echo
+echo
+
+"${CMD[@]}"
