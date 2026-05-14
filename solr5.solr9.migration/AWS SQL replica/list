@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PYTHON_SCRIPT="./solrReindexCustomers.py"
+PYTHON_SCRIPT="./solrReindexCollection.py"
 
 DEFAULT_MANIFEST_S3_URI="s3://solr9-ids-for-indexing/customers/dev/replay/customers_dev_all_20260501T150413Z_missing_solr9.jsonl"
 DEFAULT_COLLECTION="customers"
@@ -212,7 +212,7 @@ if [[ ! -f "$PYTHON_SCRIPT" ]]; then
   echo -e "${RED}❌ Python script not found:${RESET}"
   echo "$PYTHON_SCRIPT"
   echo
-  echo -e "${GREY}  Expected to run from the directory containing solrReindexCustomers.py.${RESET}"
+  echo -e "${GREY}  Expected to run from the directory containing solrReindexCollection.py (or solrReindexCustomers.py).${RESET}"
   exit 1
 fi
 

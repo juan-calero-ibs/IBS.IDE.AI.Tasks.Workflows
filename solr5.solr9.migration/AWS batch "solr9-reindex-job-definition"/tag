@@ -1,0 +1,5 @@
+
+cd /Users/juan/src/github.com/aboveproperty/aboveproperty.devops/
+podman tag "localhost/solr9-reindex-runner:$(git rev-parse --short HEAD)" \
+  "717626221026.dkr.ecr.us-east-1.amazonaws.com/solr9-reindex-runner:$(git rev-parse --short HEAD)"
+cd /Users/juan/src/github.com/IBS.IDE.AI.Tasks.Workflows/solr5.solr9.migration/AWS\ batch\ \"solr9-reindex-job-definition\"

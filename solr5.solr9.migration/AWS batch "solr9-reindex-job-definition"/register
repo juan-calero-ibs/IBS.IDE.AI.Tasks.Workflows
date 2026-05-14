@@ -1,0 +1,3 @@
+cd /Users/juan/src/github.com/aboveproperty/aboveproperty.devops/
+aws batch register-job-definition --cli-input-json file://batch/job-definition/solr9-reindex-job-definition.json
+cd /Users/juan/src/github.com/IBS.IDE.AI.Tasks.Workflows/solr5.solr9.migration/AWS\ batch\ \"solr9-reindex-job-definition\"

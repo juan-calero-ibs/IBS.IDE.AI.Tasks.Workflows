@@ -255,7 +255,7 @@ JOB_QUEUE=$(prompt_value \
 
 JOB_DEFINITION=$(prompt_value \
   "Enter AWS Batch job definition" \
-  "solr9-customers-reindex:6" \
+  "solr9-customers-reindex:9" \
   "Use the correct revision. If the Python runner image or command changed, register a new job definition revision first.")
 
 BUCKET=$(prompt_value \
