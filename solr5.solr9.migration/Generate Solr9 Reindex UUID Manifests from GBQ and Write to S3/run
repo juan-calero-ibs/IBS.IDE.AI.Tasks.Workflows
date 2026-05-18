@@ -2,10 +2,14 @@
 
 set -euo pipefail
 
-PYTHON_SCRIPT="/Users/juan/src/github.com/aboveproperty/aboveproperty.devops/scripts/solr9_reindex_uuid_manifest_gbq_to_s3.py"
-SQL_DIR="/Users/juan/src/github.com/aboveproperty/aboveproperty.devops/scripts/solr9-reindex-manifest-queries"
+REPO_ROOT="${REPO_ROOT:-/Users/juan/src/github.com/aboveproperty/aboveproperty.devops}"
+PYTHON_SCRIPT="${PYTHON_SCRIPT:-${REPO_ROOT}/scripts/solr9_reindex_manifest_gbq_to_s3.py}"
+SQL_DIR="${SQL_DIR:-${REPO_ROOT}/scripts/solr9-reindex-manifest-queries}"
 
-BUCKET="solr9-ids-for-indexing"
+DEFAULT_BUCKET="${S3_BUCKET:-solr9-ids-for-indexing}"
+DEFAULT_COLLECTION="${COLLECTION:-agreements}"
+DEFAULT_ENVIRONMENT="${ENVIRONMENT:-stage}"
+DEFAULT_PROJECT="${GCP_PROJECT:-abvprp-stage}"
 
 TEMP_SQL_FILE=""
 
@@ -35,7 +39,6 @@ print_help() {
 }
 
 print_valid_values() {
-  shift 0
   echo -e "${GREY}  Valid values: $*${RESET}" >&2
 }
 
@@ -154,6 +157,48 @@ file_modified_date() {
   fi
 }
 
+default_manifest_id_key_for_collection() {
+  local collection="$1"
+
+  case "$collection" in
+    agreements)
+      echo "agreementId"
+      ;;
+    customers)
+      echo "customerId"
+      ;;
+    products)
+      echo "productId"
+      ;;
+    reservations)
+      echo "reservationId"
+      ;;
+    reservationproducts)
+      echo "reservationProductId"
+      ;;
+    *)
+      echo "documentId"
+      ;;
+  esac
+}
+
+default_source_for_collection() {
+  local project="$1"
+  local collection="$2"
+
+  case "$collection" in
+    agreements)
+      echo "gbq:${project}.ROOT.agreements_latest_v3"
+      ;;
+    customers)
+      echo "gbq:${project}.ABVPRP.customers_latest_v3"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
 pick_sql_file() {
   local sql_files=()
   local index
@@ -256,13 +301,33 @@ echo
 
 CREDENTIALS=$(prompt_optional_value \
   "Enter GBQ credentials JSON path" \
-  "Optional. Leave empty to use Application Default Credentials from gcloud auth application-default login or GOOGLE_APPLICATION_CREDENTIALS.")
+  "Optional. Leave empty to use Application Default Credentials from gcloud auth application-default login or existing GOOGLE_APPLICATION_CREDENTIALS.")
+
+if [[ -n "$CREDENTIALS" ]]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="$CREDENTIALS"
+fi
 
 PROJECT=$(prompt_valid_value \
   "Enter GCP project" \
-  "abvprp-stage" \
+  "$DEFAULT_PROJECT" \
   "Google Cloud project used by the BigQuery client." \
   abvprp-stage abvprp-prod)
+
+BUCKET=$(prompt_value \
+  "Enter S3 bucket" \
+  "$DEFAULT_BUCKET" \
+  "Bucket used for manifest upload. Can also be provided through S3_BUCKET.")
+
+COLLECTION=$(prompt_value \
+  "Enter collection" \
+  "$DEFAULT_COLLECTION" \
+  "Collection name used in S3 path and manifest filename. Examples: agreements, customers, products, reservations.")
+
+ENVIRONMENT=$(prompt_valid_value \
+  "Enter environment" \
+  "$DEFAULT_ENVIRONMENT" \
+  "Path segment for S3 output: s3://bucket/collection/environment/input/... Can also be provided through ENVIRONMENT." \
+  dev stage prod)
 
 SQL_SOURCE=$(prompt_valid_value \
   "Choose SQL source" \
@@ -276,61 +341,44 @@ else
   QUERY_FILE=$(paste_sql_file)
 fi
 
-echo >&2
-echo -e "${GREY}  Fixed bucket for --bucket. This script does not prompt for bucket.${RESET}" >&2
-echo -e "${GREY}  Value: $BUCKET${RESET}" >&2
-echo >&2
-
-COLLECTION=$(prompt_valid_value \
-  "Enter collection" \
-  "customers" \
-  "Path segment and filename prefix for the manifest output." \
-  customers agreements products reservations reservationproducts)
-
-ENVIRONMENT=$(prompt_valid_value \
-  "Enter environment" \
-  "dev" \
-  "Path segment for S3 output: s3://bucket/collection/environment/input/..." \
-  dev stage prod)
-
 MANIFEST_TYPE=$(prompt_value \
   "Enter manifest type" \
   "reindex_ids" \
-  "Second segment in manifest filename, for example customers_reindex_ids_TIMESTAMP.jsonl.")
+  "Second segment in manifest filename, for example agreements_reindex_ids_TIMESTAMP.jsonl.")
 
-ID_COLUMN=$(prompt_value \
-  "Enter ID column" \
-  "customerId" \
-  "BigQuery result column mapped into JSON customerId. SQL should return this column or an accepted fallback like customer_id, id, or Id.")
+MANIFEST_ID_KEY_DEFAULT=$(default_manifest_id_key_for_collection "$COLLECTION")
+MANIFEST_ID_KEY=$(prompt_value \
+  "Enter manifest ID key" \
+  "$MANIFEST_ID_KEY_DEFAULT" \
+  "JSONL key written for each ID. Example for agreements: agreementId. Example for customers: customerId.")
 
-SOURCE=$(prompt_optional_value \
-  "Enter source metadata" \
-  "Optional lineage metadata. Example: gbq:abvprp-stage.dataset.table")
+MANIFEST_VALUE_VALIDATION=$(prompt_valid_value \
+  "Enter manifest value validation" \
+  "uuid" \
+  "Validation applied to each manifest ID value before writing JSONL. Use none to skip validation." \
+  uuid none)
+
+SOURCE_DEFAULT=$(default_source_for_collection "$PROJECT" "$COLLECTION")
+if [[ -n "$SOURCE_DEFAULT" ]]; then
+  SOURCE=$(prompt_value \
+    "Enter source metadata" \
+    "$SOURCE_DEFAULT" \
+    "Optional lineage metadata written to each JSONL row.")
+else
+  SOURCE=$(prompt_optional_value \
+    "Enter source metadata" \
+    "Optional lineage metadata. Example: gbq:${PROJECT}.DATASET.TABLE")
+fi
 
 REASON=$(prompt_value \
   "Enter reason metadata" \
-  "solr9_migration" \
-  "Optional reason written to each JSONL row, for example solr9_cutover or repair_holes.")
-
-SKIP_UUID_CHECK=$(prompt_yes_no \
-  "Skip UUID check?" \
-  "no" \
-  "yes disables warnings when IDs are not shaped like customer UUIDs.")
-
-LOWERCASE_ID=$(prompt_yes_no \
-  "Lowercase IDs?" \
-  "no" \
-  "yes lowercases customerId strings before writing JSONL.")
+  "full-${COLLECTION}-reindex" \
+  "Reason written to each JSONL row, for example full-agreements-reindex or repair-missing-ids.")
 
 DRY_RUN=$(prompt_yes_no \
   "Dry run?" \
-  "no" \
-  "yes writes JSONL to stdout only and does not upload to S3.")
-
-AWS_CLI=$(prompt_value \
-  "Enter AWS CLI executable" \
-  "aws" \
-  "Path or command used for S3 upload, normally aws.")
+  "yes" \
+  "yes writes JSONL to stdout only and does not upload to S3. no uploads to S3.")
 
 S3_ENDPOINT_URL=$(prompt_optional_value \
   "Enter S3 endpoint URL" \
@@ -344,26 +392,18 @@ CMD=(
   --collection "$COLLECTION"
   --environment "$ENVIRONMENT"
   --manifest-type "$MANIFEST_TYPE"
-  --id-column "$ID_COLUMN"
-  --reason "$REASON"
-  --aws-cli "$AWS_CLI"
+  --manifest-id-key "$MANIFEST_ID_KEY"
 )
 
-if [[ -n "$CREDENTIALS" ]]; then
-  CMD+=(--credentials "$CREDENTIALS")
+if [[ "$MANIFEST_VALUE_VALIDATION" != "none" ]]; then
+  CMD+=(--manifest-value-validation "$MANIFEST_VALUE_VALIDATION")
 fi
 
 if [[ -n "$SOURCE" ]]; then
   CMD+=(--source "$SOURCE")
 fi
 
-if [[ "$SKIP_UUID_CHECK" == "yes" ]]; then
-  CMD+=(--skip-uuid-check)
-fi
-
-if [[ "$LOWERCASE_ID" == "yes" ]]; then
-  CMD+=(--lowercase-id)
-fi
+CMD+=(--reason "$REASON")
 
 if [[ "$DRY_RUN" == "yes" ]]; then
   CMD+=(--dry-run)
@@ -378,22 +418,20 @@ TARGET_FILE_PATTERN="${COLLECTION}_${MANIFEST_TYPE}_<UTC_TIMESTAMP>.jsonl"
 
 echo
 echo -e "${BOLD}${GREEN}🚀 Running GBQ → S3 manifest generator${RESET}"
-echo "Project:          $PROJECT"
-echo "Query File:       $QUERY_FILE"
-echo "Bucket:           $BUCKET"
-echo "Collection:       $COLLECTION"
-echo "Environment:      $ENVIRONMENT"
-echo "Manifest Type:    $MANIFEST_TYPE"
-echo "ID Column:        $ID_COLUMN"
-echo "Source:           ${SOURCE:-<none>}"
-echo "Reason:           $REASON"
-echo "Skip UUID Check:  $SKIP_UUID_CHECK"
-echo "Lowercase IDs:    $LOWERCASE_ID"
-echo "Dry Run:          $DRY_RUN"
-echo "AWS CLI:          $AWS_CLI"
-echo "S3 Endpoint URL:  ${S3_ENDPOINT_URL:-<none>}"
-echo "Target Prefix:    $TARGET_S3_PREFIX"
-echo "Target Pattern:   $TARGET_FILE_PATTERN"
+echo "Project:                    $PROJECT"
+echo "Query File:                 $QUERY_FILE"
+echo "Bucket:                     $BUCKET"
+echo "Collection:                 $COLLECTION"
+echo "Environment:                $ENVIRONMENT"
+echo "Manifest Type:              $MANIFEST_TYPE"
+echo "Manifest ID Key:            $MANIFEST_ID_KEY"
+echo "Manifest Value Validation:  $MANIFEST_VALUE_VALIDATION"
+echo "Source:                     ${SOURCE:-<none>}"
+echo "Reason:                     $REASON"
+echo "Dry Run:                    $DRY_RUN"
+echo "S3 Endpoint URL:            ${S3_ENDPOINT_URL:-<none>}"
+echo "Target Prefix:              $TARGET_S3_PREFIX"
+echo "Target Pattern:             $TARGET_FILE_PATTERN"
 echo
 
 echo -e "${GREY}Command:${RESET}"

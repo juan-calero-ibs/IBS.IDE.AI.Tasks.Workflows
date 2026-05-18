@@ -1,0 +1,5 @@
+aws secretsmanager create-secret \
+  --region us-east-1 \
+  --name "/aps/solr9-reindex/dev/aps-runtime-config" \
+  --description "DEV APS runtime config for Solr9 reindex Batch jobs" \
+  --secret-string file://aps-runtime-config.dev.json
