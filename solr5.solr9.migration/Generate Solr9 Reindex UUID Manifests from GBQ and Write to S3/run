@@ -8,7 +8,7 @@ SQL_DIR="${SQL_DIR:-${REPO_ROOT}/scripts/solr9-reindex-manifest-queries}"
 
 DEFAULT_BUCKET="${S3_BUCKET:-solr9-ids-for-indexing}"
 DEFAULT_COLLECTION="${COLLECTION:-agreements}"
-DEFAULT_ENVIRONMENT="${ENVIRONMENT:-stage}"
+DEFAULT_ENVIRONMENT="${ENVIRONMENT:-dev}"
 DEFAULT_PROJECT="${GCP_PROJECT:-abvprp-stage}"
 
 TEMP_SQL_FILE=""
@@ -377,7 +377,7 @@ REASON=$(prompt_value \
 
 DRY_RUN=$(prompt_yes_no \
   "Dry run?" \
-  "yes" \
+  "no" \
   "yes writes JSONL to stdout only and does not upload to S3. no uploads to S3.")
 
 S3_ENDPOINT_URL=$(prompt_optional_value \

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-read -r -p "Enter AWS region [us-east-1]: " REGION
+# read -r -p "Enter AWS region [us-east-1]: " REGION
 REGION=${REGION:-us-east-1}
 
 # read -r -p "Enter AWS Batch job queue [solr9-reindex-job-queue]: " JOB_QUEUE

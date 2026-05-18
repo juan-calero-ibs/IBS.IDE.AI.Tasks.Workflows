@@ -88,25 +88,6 @@ prompt_positive_int() {
   done
 }
 
-prompt_secret_value() {
-  local prompt="$1"
-  local value
-
-  while true; do
-    print_help "Required for non-dry-run APS reindex calls."
-    echo -ne "${BOLD}${prompt}${RESET}: " >&2
-    read -r -s value
-    echo >&2
-
-    if [[ -n "$value" ]]; then
-      echo "$value"
-      return 0
-    fi
-
-    echo -e "${RED}❌ Value is required.${RESET}" >&2
-  done
-}
-
 human_size() {
   local bytes="$1"
 
@@ -240,7 +221,9 @@ fi
 
 echo
 echo -e "${BOLD}${CYAN}🚀 Submit Solr9 Reindex AWS Batch Job${RESET}"
-echo -e "${GREY}  This script passes only the valid manifest environment variable: MANIFEST_S3_URI.${RESET}"
+echo -e "${GREY}  This script submits manifest/runtime controls only.${RESET}"
+echo -e "${GREY}  BASE_URL, ADMIN_USERNAME, and ADMIN_PASSWORD are intentionally not prompted or passed here.${RESET}"
+echo -e "${GREY}  They are injected by AWS Batch from Secrets Manager through the job definition secrets block.${RESET}"
 echo
 
 AWS_REGION=$(prompt_value \
@@ -255,7 +238,7 @@ JOB_QUEUE=$(prompt_value \
 
 JOB_DEFINITION=$(prompt_value \
   "Enter AWS Batch job definition" \
-  "solr9-manifest-reindex:3" \
+  "solr9-manifest-reindex:4" \
   "Use the correct revision. If the Python runner image or command changed, register a new job definition revision first.")
 
 BUCKET=$(prompt_value \
@@ -304,32 +287,26 @@ S3_FILE=$(prompt_s3_file \
 
 MANIFEST_S3_URI="s3://${BUCKET}/${S3_PREFIX}${S3_FILE}"
 
-BASE_URL=$(prompt_value \
-  "Enter BASE_URL" \
-  "http://172.31.59.198:8080" \
-  "APS solrMigrationWorker URL.
-  http://172.31.59.198:8080 = direct EC2 node private IP access to solrMigrationWorker.
-  To get the EC2 private IP from the EC2 node, run after ssh-ing into the node:
-    hostname -I | awk '{print \$1}'")
-
-ADMIN_USERNAME=$(prompt_value \
-  "Enter ADMIN_USERNAME" \
-  "admin" \
-  "Admin username for APS Basic auth.")
+# Runtime APS connection/auth configuration is intentionally not collected by this submitter.
+# BASE_URL, ADMIN_USERNAME, and ADMIN_PASSWORD are defined as AWS Batch job-definition secrets,
+# backed by AWS Secrets Manager. Keeping them out of CLI prompts and container overrides avoids:
+#   - exposing secrets in terminal history, process listings, shell scrollback, or copied summaries;
+#   - duplicating environment-specific runtime configuration in local scripts;
+#   - accidentally overriding the job-definition secret values during submit-job.
+# Required job-definition secret names:
+#   BASE_URL
+#   ADMIN_USERNAME
+#   ADMIN_PASSWORD
+# Example valueFrom entries:
+#   arn:aws:secretsmanager:us-east-1:717626221026:secret:/aps/solr9-reindex/dev/aps-runtime-config-AbCdEf:BASE_URL::
+#   arn:aws:secretsmanager:us-east-1:717626221026:secret:/aps/solr9-reindex/dev/aps-runtime-config-AbCdEf:ADMIN_USERNAME::
+#   arn:aws:secretsmanager:us-east-1:717626221026:secret:/aps/solr9-reindex/dev/aps-runtime-config-AbCdEf:ADMIN_PASSWORD::
 
 DRY_RUN=$(prompt_valid_value \
   "Dry run?" \
   "0" \
-  "1 validates/writes artifacts without calling APS. 0 performs the reindex." \
+  "1 validates/writes artifacts without calling APS. 0 performs the reindex using AWS Batch job-definition secrets." \
   0 1)
-
-if [[ "$DRY_RUN" == "1" ]]; then
-  ADMIN_PASSWORD=""
-  echo -e "${GREY}  Dry run enabled; ADMIN_PASSWORD will not be prompted.${RESET}" >&2
-else
-  ADMIN_PASSWORD=$(prompt_secret_value \
-    "Enter ADMIN_PASSWORD")
-fi
 
 BATCH_SIZE=$(prompt_positive_int \
   "Enter batch size" \
@@ -396,10 +373,9 @@ echo "Environment:             $ENVIRONMENT"
 echo "S3 Folder:               $S3_FOLDER"
 echo "Manifest S3 URI:         $MANIFEST_S3_URI"
 echo "MANIFEST_S3_URI env:     $MANIFEST_S3_URI"
-echo "Base URL:                $BASE_URL"
-echo "Base URL Note:           18080=container solrMigrationWorker, 28080=EC2 node solrMigrationWorker"
-echo "Admin Username:          $ADMIN_USERNAME"
-echo "Admin Password:          ********"
+echo "Runtime Secrets:          AWS Batch job definition injects BASE_URL, ADMIN_USERNAME, ADMIN_PASSWORD"
+echo "Runtime Secret Source:    AWS Secrets Manager /aps/solr9-reindex/<env>/aps-runtime-config-*"
+echo "Runtime Config Note:      Not prompted or passed as container overrides by this submitter"
 echo "Batch Size:              $BATCH_SIZE"
 echo "Max HTTP Retries:        $MAX_HTTP_RETRIES"
 echo "Dry Run:                 $DRY_RUN"
@@ -419,10 +395,6 @@ CONTAINER_OVERRIDES=$(jq -n \
   --arg MANIFEST_S3_URI "$MANIFEST_S3_URI" \
   --arg COLLECTION "$COLLECTION" \
   --arg ENVIRONMENT "$ENVIRONMENT" \
-  --arg BASE_URL "$BASE_URL" \
-  --arg APS_BASE_URL "$BASE_URL" \
-  --arg ADMIN_USERNAME "$ADMIN_USERNAME" \
-  --arg ADMIN_PASSWORD "$ADMIN_PASSWORD" \
   --arg BATCH_SIZE "$BATCH_SIZE" \
   --arg MAX_HTTP_RETRIES "$MAX_HTTP_RETRIES" \
   --arg DRY_RUN "$DRY_RUN" \
@@ -440,10 +412,6 @@ CONTAINER_OVERRIDES=$(jq -n \
         {name: "MANIFEST_S3_URI", value: $MANIFEST_S3_URI},
         {name: "COLLECTION", value: $COLLECTION},
         {name: "ENVIRONMENT", value: $ENVIRONMENT},
-        {name: "BASE_URL", value: $BASE_URL},
-        {name: "APS_BASE_URL", value: $APS_BASE_URL},
-        {name: "ADMIN_USERNAME", value: $ADMIN_USERNAME},
-        {name: "ADMIN_PASSWORD", value: $ADMIN_PASSWORD},
         {name: "BATCH_SIZE", value: $BATCH_SIZE},
         {name: "MAX_HTTP_RETRIES", value: $MAX_HTTP_RETRIES},
         {name: "DRY_RUN", value: $DRY_RUN},
@@ -478,7 +446,7 @@ CONTAINER_OVERRIDES=$(jq -n \
 
 SAFE_CONTAINER_OVERRIDES=$(echo "$CONTAINER_OVERRIDES" | jq '
   .environment |= map(
-    if .name == "ADMIN_PASSWORD" or .name == "SOLR9_AUTH" then
+    if .name == "SOLR9_AUTH" then
       .value = "********"
     else
       .

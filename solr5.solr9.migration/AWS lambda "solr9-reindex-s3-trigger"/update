@@ -6,6 +6,27 @@ FUNCTION_NAME="solr9-reindex-s3-trigger"
 JOB_QUEUE="solr9-reindex-job-queue"
 MANIFEST_BUCKET_NAME="solr9-ids-for-indexing"
 
+# Runtime connection/auth values are intentionally NOT stored in Lambda env vars.
+# BASE_URL, ADMIN_USERNAME, and ADMIN_PASSWORD are injected into the AWS Batch
+# container from the Batch job definition `secrets` block backed by AWS Secrets Manager.
+# Keeping them out of Lambda avoids exposing secrets in Lambda configuration,
+# CLI history, copied terminal output, or accidental Lambda container overrides.
+LAMBDA_FORBIDDEN_ENV_KEYS=(
+  BASE_URL
+  ADMIN_USERNAME
+  ADMIN_PASSWORD
+)
+
+TEMP_ENV_FILE=""
+
+cleanup() {
+  if [[ -n "${TEMP_ENV_FILE:-}" && -f "$TEMP_ENV_FILE" ]]; then
+    rm -f "$TEMP_ENV_FILE"
+  fi
+}
+
+trap cleanup EXIT
+
 prompt_value() {
   local prompt="$1"
   local default="$2"
@@ -70,7 +91,7 @@ prompt_positive_int() {
   done
 }
 
-read -r -p "Enter AWS region [us-east-1]: " REGION
+# read -r -p "Enter AWS region [us-east-1]: " REGION
 REGION=${REGION:-us-east-1}
 
 echo
@@ -95,21 +116,24 @@ CURRENT_JOB_DEFINITION=$(current_var "JOB_DEFINITION")
 CURRENT_BATCH_SIZE=$(current_var "BATCH_SIZE")
 CURRENT_CONTAINER_DRY_RUN=$(current_var "CONTAINER_DRY_RUN")
 CURRENT_MAX_HTTP_RETRIES=$(current_var "MAX_HTTP_RETRIES")
-CURRENT_BASE_URL=$(current_var "BASE_URL")
-CURRENT_ADMIN_USERNAME=$(current_var "ADMIN_USERNAME")
-CURRENT_ADMIN_PASSWORD=$(current_var "ADMIN_PASSWORD")
 
 echo "✅ Current values loaded"
 echo
 
+echo "🔐 Secret handling note:"
+echo "BASE_URL, ADMIN_USERNAME, and ADMIN_PASSWORD must not be stored in Lambda env vars."
+echo "They are provided to the AWS Batch container by the Batch job definition secrets block."
+echo "This script will remove those keys from the Lambda environment if they already exist."
+echo
+
 echo "⚠️  Job Definition note:"
-echo "If the Python runner image or command changed, create/register a new AWS Batch job definition revision first."
-echo "Then enter the new revision here, for example: solr9-customers-reindex:7"
+echo "If the Python runner image, command, or Batch secrets changed, create/register a new AWS Batch job definition revision first."
+echo "Then enter the new revision here, for example: solr9-manifest-reindex:4"
 echo
 
 JOB_DEFINITION=$(prompt_required_value \
   "Enter JOB_DEFINITION" \
-  "${CURRENT_JOB_DEFINITION:-solr9-customers-reindex:6}")
+  "${CURRENT_JOB_DEFINITION:-solr9-manifest-reindex:4}")
 
 BATCH_SIZE=$(prompt_positive_int \
   "Enter BATCH_SIZE" \
@@ -125,33 +149,6 @@ MAX_HTTP_RETRIES=$(prompt_valid_value \
   "${CURRENT_MAX_HTTP_RETRIES:-0}" \
   0 1 2 3 4 5)
 
-BASE_URL=$(prompt_required_value \
-  "Enter BASE_URL" \
-  "${CURRENT_BASE_URL:-http://localhost:18080}")
-
-ADMIN_USERNAME=$(prompt_required_value \
-  "Enter ADMIN_USERNAME" \
-  "${CURRENT_ADMIN_USERNAME:-admin}")
-
-echo
-
-if [[ -n "$CURRENT_ADMIN_PASSWORD" ]]; then
-  read -r -s -p "Enter ADMIN_PASSWORD [press ENTER to keep current]: " ADMIN_PASSWORD_INPUT
-  echo
-  ADMIN_PASSWORD="${ADMIN_PASSWORD_INPUT:-$CURRENT_ADMIN_PASSWORD}"
-else
-  while true; do
-    read -r -s -p "Enter ADMIN_PASSWORD: " ADMIN_PASSWORD
-    echo
-
-    if [[ -n "$ADMIN_PASSWORD" ]]; then
-      break
-    fi
-
-    echo "❌ ADMIN_PASSWORD is required." >&2
-  done
-fi
-
 UPDATED_ENV=$(echo "$CURRENT_ENV" | jq \
   --arg JOB_QUEUE "$JOB_QUEUE" \
   --arg JOB_DEFINITION "$JOB_DEFINITION" \
@@ -159,24 +156,22 @@ UPDATED_ENV=$(echo "$CURRENT_ENV" | jq \
   --arg CONTAINER_DRY_RUN "$CONTAINER_DRY_RUN" \
   --arg MAX_HTTP_RETRIES "$MAX_HTTP_RETRIES" \
   --arg MANIFEST_BUCKET_NAME "$MANIFEST_BUCKET_NAME" \
-  --arg BASE_URL "$BASE_URL" \
-  --arg ADMIN_USERNAME "$ADMIN_USERNAME" \
-  --arg ADMIN_PASSWORD "$ADMIN_PASSWORD" \
   '
-    .JOB_QUEUE = $JOB_QUEUE
+    del(.BASE_URL, .ADMIN_USERNAME, .ADMIN_PASSWORD)
+    | .JOB_QUEUE = $JOB_QUEUE
     | .JOB_DEFINITION = $JOB_DEFINITION
     | .BATCH_SIZE = $BATCH_SIZE
     | .CONTAINER_DRY_RUN = $CONTAINER_DRY_RUN
     | .MAX_HTTP_RETRIES = $MAX_HTTP_RETRIES
     | .MANIFEST_BUCKET_NAME = $MANIFEST_BUCKET_NAME
-    | .BASE_URL = $BASE_URL
-    | .ADMIN_USERNAME = $ADMIN_USERNAME
-    | .ADMIN_PASSWORD = $ADMIN_PASSWORD
   ')
 
-ENVIRONMENT_PAYLOAD=$(jq -n \
+TEMP_ENV_FILE=$(mktemp "/tmp/lambda-env-payload-XXXXXX.json")
+
+jq -n \
   --argjson variables "$UPDATED_ENV" \
-  '{Variables: $variables}')
+  '{Variables: $variables}' \
+  > "$TEMP_ENV_FILE"
 
 echo
 echo "🚀 Updating Lambda environment"
@@ -188,9 +183,13 @@ echo "BATCH_SIZE:           $BATCH_SIZE"
 echo "CONTAINER_DRY_RUN:    $CONTAINER_DRY_RUN"
 echo "MAX_HTTP_RETRIES:     $MAX_HTTP_RETRIES"
 echo "MANIFEST_BUCKET_NAME: $MANIFEST_BUCKET_NAME"
-echo "BASE_URL:             $BASE_URL"
-echo "ADMIN_USERNAME:       $ADMIN_USERNAME"
-echo "ADMIN_PASSWORD:       ********"
+echo "Forbidden Env Keys:   ${LAMBDA_FORBIDDEN_ENV_KEYS[*]}"
+echo "Runtime Secrets:      AWS Batch job definition injects BASE_URL, ADMIN_USERNAME, ADMIN_PASSWORD"
+echo "Payload File:         $TEMP_ENV_FILE"
+echo
+
+echo "Environment payload preview:"
+jq '.' "$TEMP_ENV_FILE"
 echo
 
 aws lambda wait function-updated \
@@ -200,7 +199,7 @@ aws lambda wait function-updated \
 aws lambda update-function-configuration \
   --region "$REGION" \
   --function-name "$FUNCTION_NAME" \
-  --environment "$ENVIRONMENT_PAYLOAD" \
+  --environment "file://$TEMP_ENV_FILE" \
   --output table
 
 echo
@@ -223,5 +222,30 @@ aws lambda get-function-configuration \
   --query 'Environment.Variables' \
   --output json \
 | jq '
-    .ADMIN_PASSWORD = "********"
+    (. // {})
+    | del(.BASE_URL, .ADMIN_USERNAME, .ADMIN_PASSWORD)
   '
+
+echo
+echo "🔎 Forbidden Lambda env var check"
+echo "------------------------------------------------------------"
+
+FORBIDDEN_PRESENT=$(aws lambda get-function-configuration \
+  --region "$REGION" \
+  --function-name "$FUNCTION_NAME" \
+  --query 'Environment.Variables' \
+  --output json \
+| jq -r '
+    (. // {})
+    | ["BASE_URL", "ADMIN_USERNAME", "ADMIN_PASSWORD"] as $forbidden
+    | [keys[]? | select(. as $key | $forbidden | index($key))]
+    | .[]?
+  ')
+
+if [[ -n "$FORBIDDEN_PRESENT" ]]; then
+  echo "❌ Forbidden Lambda env vars still present:"
+  echo "$FORBIDDEN_PRESENT"
+  exit 1
+fi
+
+echo "✅ BASE_URL, ADMIN_USERNAME, and ADMIN_PASSWORD are not present in Lambda env vars."

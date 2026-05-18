@@ -1,0 +1,4 @@
+cd /Users/juan/src/github.com/aboveproperty/aboveproperty.devops/lambda/solr9-reindex-s3-trigger
+export AWS_REGION=us-east-1   # or your region
+./deploy.sh package
+cd /Users/juan/src/github.com/IBS.IDE.AI.Tasks.Workflows/solr5.solr9.migration/AWS\ batch\ \"solr9-reindex-job-definition\"

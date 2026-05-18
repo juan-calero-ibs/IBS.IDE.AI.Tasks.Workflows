@@ -4,7 +4,7 @@ set -euo pipefail
 
 JOB_ID="${1:-}"
 
-LOG_GROUP="/aws/batch/solr9-customers-reindex"
+LOG_GROUP="/aws/batch/solr9-manifest-reindex"
 
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
@@ -12,7 +12,7 @@ GREEN='\033[0;32m'
 GREY='\033[0;90m'
 RESET='\033[0m'
 
-read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
+# read -r -p "Enter AWS region [us-east-1]: " AWS_REGION
 AWS_REGION=${AWS_REGION:-us-east-1}
 
 if [[ -z "$JOB_ID" ]]; then
