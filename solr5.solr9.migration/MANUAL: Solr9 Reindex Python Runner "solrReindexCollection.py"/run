@@ -4,8 +4,8 @@ set -euo pipefail
 
 PYTHON_SCRIPT="/Users/juan/src/github.com/aboveproperty/aboveproperty.devops/runbooks/solrReindexCollection.py"
 
-DEFAULT_MANIFEST_S3_URI="s3://solr9-ids-for-indexing/customers/dev/replay/customers_dev_all_20260501T150413Z_missing_solr9.jsonl"
-DEFAULT_COLLECTION="customers"
+DEFAULT_MANIFEST_S3_URI="s3://solr9-ids-for-indexing/agreements/dev/input/agreements_reindex_ids_20260518T190526Z.jsonl"
+DEFAULT_COLLECTION="agreements"
 DEFAULT_ENVIRONMENT="dev"
 
 # APS solrMigrationWorker endpoints:

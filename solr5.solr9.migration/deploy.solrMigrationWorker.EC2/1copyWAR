@@ -1,0 +1,1 @@
+scp /Users/juan/src/github.com/aboveproperty/aboveproperty.war/target/aboveproperty-war-1.1.0-SNAPSHOT.war aws-solrMigrationWorker:/tmp/aboveproperty-war-new.war 

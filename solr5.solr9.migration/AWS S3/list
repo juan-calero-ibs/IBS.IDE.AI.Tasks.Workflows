@@ -93,14 +93,15 @@ echo -e "${GREY}  Lists files from the Solr9 manifest bucket layout.${RESET}"
 echo -e "${GREY}  Bucket is fixed in this script: ${BUCKET}${RESET}"
 echo
 
-REGION=$(prompt_value \
-  "Enter AWS region" \
-  "us-east-1" \
-  "AWS region where the manifest bucket is accessed.")
+REGION="us-east-1"
+# REGION=$(prompt_value \
+#   "Enter AWS region" \
+#   "us-east-1" \
+#   "AWS region where the manifest bucket is accessed.")
 
 COLLECTION=$(prompt_valid_value \
   "Enter collection" \
-  "customers" \
+  "agreements" \
   "Collection path segment under the bucket." \
   customers agreements products reservations reservationproducts)
 

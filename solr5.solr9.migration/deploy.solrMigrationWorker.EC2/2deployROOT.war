@@ -1,0 +1,27 @@
+SSH to aws-solrMigrationWorker
+Then run:#
+
+DATE=$(date -u +%Y%m%d_%H%M%S)
+WEBAPPS=/var/lib/tomcat/webapps
+
+sudo systemctl stop tomcat
+
+sudo mkdir -p /opt/abvprp/backups/war/$DATE
+
+sudo cp -p $WEBAPPS/ROOT.war \
+  /opt/abvprp/backups/war/$DATE/ROOT.war.before \
+  2>/dev/null || true
+
+sudo cp -a $WEBAPPS/ROOT \
+  /opt/abvprp/backups/war/$DATE/ROOT.before \
+  2>/dev/null || true
+
+sudo rm -rf $WEBAPPS/ROOT
+sudo rm -f $WEBAPPS/ROOT.war
+
+sudo install -o tomcat -g tomcat -m 0644 \
+  /tmp/aboveproperty-war-new.war \
+  $WEBAPPS/ROOT.war
+
+sudo systemctl start tomcat
+sudo systemctl status tomcat -l --no-pager
